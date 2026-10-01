@@ -1,0 +1,32 @@
+# Maven
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar
+
+# IDE - IntelliJ
+**/.idea/
+**/*.iml
+
+# Eclipse
+**/.classpath
+**/.project
+**/.settings/
+
+# VS Code
+**/.vscode/
+
+# Logs
+**/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+**/.env
+**/.env.*
+!.env.example
+
+# Spring
+**/application-local.properties
+**/application-local.yml
+**/application-local.yaml
