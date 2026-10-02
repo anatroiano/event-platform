@@ -6,8 +6,6 @@ COPY pom.xml .
 
 RUN mvn dependency:go-offline -B
 
-COPY src ./src
-
 EXPOSE 8081
 EXPOSE 5005
 

@@ -1,0 +1,106 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    networks:
+      - event-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  events-db:
+    image: postgres:18
+    container_name: events-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: events_service
+    volumes:
+      - events-db-volume:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - event-network
+
+  email-db:
+    image: postgres:18
+    container_name: email-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: email_service
+    volumes:
+      - email-db-volume:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - event-network
+
+  events-api:
+    image: events-service
+    container_name: events-service
+    build:
+      context: ./events-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://events-db:5432/events_service
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    env_file:
+      - ./events-service/.env
+    networks:
+      - event-network
+    depends_on:
+      events-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  email-api:
+    image: email-service
+    container_name: email-service
+    build:
+      context: ./email-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://email-db:5432/email_service
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    env_file:
+      - ./email-service/.env
+    networks:
+      - event-network
+    depends_on:
+      email-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  events-db-volume:
+  email-db-volume:
+
+networks:
+  event-network:
+    name: event-network
+    driver: bridge
