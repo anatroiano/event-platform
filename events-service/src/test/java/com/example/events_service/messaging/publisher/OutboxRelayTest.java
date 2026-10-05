@@ -1,7 +1,6 @@
 package com.example.events_service.messaging.publisher;
 
 import com.example.events_service.domain.OutboxMessage;
-import com.example.events_service.enums.OutboxStatus;
 import com.example.events_service.repository.OutboxRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -10,15 +9,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.*;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
+@DisplayName("OutboxRelay")
 class OutboxRelayTest {
 
     @Mock
@@ -30,62 +33,76 @@ class OutboxRelayTest {
     @InjectMocks
     private OutboxRelay outboxRelay;
 
+    private OutboxMessage buildPendingMessage(String id, String routingKey) {
+        OutboxMessage message = OutboxMessage.of(routingKey, "{\"key\":\"value\"}");
+        ReflectionTestUtils.setField(message, "id", id);
+        return message;
+    }
+
     @Nested
-    @DisplayName("publishPending")
+    @DisplayName("publishPending()")
     class PublishPending {
 
         @Test
-        @DisplayName("should not interact with the publisher when there are no pending messages")
-        void shouldDoNothing_whenNoPendingMessages() {
-            when(outboxRepository.findPendingForUpdate(any(Pageable.class))).thenReturn(List.of());
+        @DisplayName("does nothing when there are no pending messages")
+        void doesNothingWhenNoPendingMessages() {
+            given(outboxRepository.findPendingForUpdate(any(PageRequest.class))).willReturn(List.of());
 
             outboxRelay.publishPending();
 
-            verifyNoInteractions(notificationPublisher);
+            then(notificationPublisher).should(never()).publish(any(), any(), any());
         }
 
         @Test
-        @DisplayName("should mark the message as SENT when publishing succeeds")
-        void shouldMarkMessageAsSent_whenPublishSucceeds() {
-            OutboxMessage message = OutboxMessage.of("email.subscription.created", "{\"key\":\"value\"}");
-            when(outboxRepository.findPendingForUpdate(any(Pageable.class))).thenReturn(List.of(message));
+        @DisplayName("publishes all pending messages and marks them as sent")
+        void publishesAllPendingMessagesAndMarksAsSent() {
+            OutboxMessage message1 = buildPendingMessage("id-1", "email.subscription.created");
+            OutboxMessage message2 = buildPendingMessage("id-2", "email.subscription.created");
+
+            given(outboxRepository.findPendingForUpdate(any(PageRequest.class)))
+                    .willReturn(List.of(message1, message2));
 
             outboxRelay.publishPending();
 
-            verify(notificationPublisher).publish(message.getRoutingKey(), message.getId(), message.getPayload());
-            assertThat(message.getStatus()).isEqualTo(OutboxStatus.SENT);
+            then(notificationPublisher).should().publish("email.subscription.created", "id-1", message1.getPayload());
+            then(notificationPublisher).should().publish("email.subscription.created", "id-2", message2.getPayload());
+
+            assertThat(message1.getStatus()).isEqualTo(com.example.events_service.enums.OutboxStatus.SENT);
+            assertThat(message2.getStatus()).isEqualTo(com.example.events_service.enums.OutboxStatus.SENT);
         }
 
         @Test
-        @DisplayName("should register a failure when the publisher throws an exception")
-        void shouldRegisterFailure_whenPublishThrows() {
-            OutboxMessage message = OutboxMessage.of("email.subscription.created", "payload");
-            when(outboxRepository.findPendingForUpdate(any(Pageable.class))).thenReturn(List.of(message));
-            doThrow(new RuntimeException("RabbitMQ down"))
-                    .when(notificationPublisher).publish(anyString(), anyString(), anyString());
+        @DisplayName("registers failure on a message when publishing throws an exception")
+        void registersFailureWhenPublishingThrows() {
+            OutboxMessage message = buildPendingMessage("id-1", "email.subscription.created");
+
+            given(outboxRepository.findPendingForUpdate(any(PageRequest.class))).willReturn(List.of(message));
+            willThrow(new RuntimeException("Broker unavailable"))
+                    .given(notificationPublisher).publish(any(), any(), any());
 
             outboxRelay.publishPending();
 
             assertThat(message.getAttempts()).isEqualTo(1);
-            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
+            assertThat(message.getStatus()).isEqualTo(com.example.events_service.enums.OutboxStatus.PENDING);
         }
 
         @Test
-        @DisplayName("should continue processing remaining messages when one fails")
-        void shouldContinueProcessing_whenOneMessageFails() {
-            OutboxMessage failingMessage = OutboxMessage.of("routing.key", "payload1");
-            OutboxMessage successMessage = OutboxMessage.of("routing.key", "payload2");
+        @DisplayName("continues processing remaining messages after one fails")
+        void continuesAfterSingleMessageFailure() {
+            OutboxMessage failing = buildPendingMessage("id-1", "email.subscription.created");
+            OutboxMessage succeeding = buildPendingMessage("id-2", "email.subscription.created");
+            String failingPayload = failing.getPayload();
 
-            when(outboxRepository.findPendingForUpdate(any(Pageable.class)))
-                    .thenReturn(List.of(failingMessage, successMessage));
+            given(outboxRepository.findPendingForUpdate(any(PageRequest.class)))
+                    .willReturn(List.of(failing, succeeding));
 
-            doThrow(new RuntimeException("falha"))
-                    .when(notificationPublisher).publish(anyString(), eq(failingMessage.getId()), anyString());
+            willThrow(new RuntimeException("Broker unavailable"))
+                    .given(notificationPublisher).publish(any(), eq("id-1"), eq(failingPayload));
 
             outboxRelay.publishPending();
 
-            assertThat(failingMessage.getStatus()).isEqualTo(OutboxStatus.PENDING);
-            assertThat(successMessage.getStatus()).isEqualTo(OutboxStatus.SENT);
+            assertThat(failing.getAttempts()).isEqualTo(1);
+            assertThat(succeeding.getStatus()).isEqualTo(com.example.events_service.enums.OutboxStatus.SENT);
         }
     }
 }

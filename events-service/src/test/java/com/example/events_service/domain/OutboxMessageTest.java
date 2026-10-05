@@ -7,83 +7,112 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@DisplayName("OutboxMessage")
 class OutboxMessageTest {
 
+    private static final int MAX_ATTEMPTS = 30;
+
+    private OutboxMessage newPendingMessage() {
+        return OutboxMessage.of("email.subscription.created", "{\"key\":\"value\"}");
+    }
+
     @Nested
-    @DisplayName("of")
+    @DisplayName("of()")
     class Of {
 
         @Test
-        @DisplayName("should create a message with PENDING status and populated fields")
-        void shouldCreateMessageWithPendingStatus() {
-            OutboxMessage message = OutboxMessage.of("email.subscription.created", "{\"key\":\"value\"}");
+        @DisplayName("creates a message with PENDING status and a generated id")
+        void createsPendingMessageWithGeneratedId() {
+            OutboxMessage message = newPendingMessage();
 
             assertThat(message.getId()).isNotBlank();
-            assertThat(message.getRoutingKey()).isEqualTo("email.subscription.created");
-            assertThat(message.getPayload()).isEqualTo("{\"key\":\"value\"}");
             assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
             assertThat(message.getAttempts()).isZero();
-            assertThat(message.getCreatedAt()).isNotNull();
             assertThat(message.getProcessedAt()).isNull();
+            assertThat(message.getCreatedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("stores the provided routing key and payload")
+        void storesRoutingKeyAndPayload() {
+            OutboxMessage message = OutboxMessage.of("my.routing.key", "{\"foo\":\"bar\"}");
+
+            assertThat(message.getRoutingKey()).isEqualTo("my.routing.key");
+            assertThat(message.getPayload()).isEqualTo("{\"foo\":\"bar\"}");
+        }
+
+        @Test
+        @DisplayName("generates a unique id for each message")
+        void generatesUniqueIds() {
+            OutboxMessage first = newPendingMessage();
+            OutboxMessage second = newPendingMessage();
+
+            assertThat(first.getId()).isNotEqualTo(second.getId());
         }
     }
 
     @Nested
-    @DisplayName("markAsSent")
+    @DisplayName("markAsSent()")
     class MarkAsSent {
 
         @Test
-        @DisplayName("should change status to SENT and set processedAt")
-        void shouldTransitionStatusToSentAndSetProcessedAt() {
-            OutboxMessage message = OutboxMessage.of("routing.key", "payload");
+        @DisplayName("transitions status to SENT")
+        void transitionsStatusToSent() {
+            OutboxMessage message = newPendingMessage();
 
             message.markAsSent();
 
             assertThat(message.getStatus()).isEqualTo(OutboxStatus.SENT);
+        }
+
+        @Test
+        @DisplayName("sets processedAt to a non-null value")
+        void setsProcessedAt() {
+            OutboxMessage message = newPendingMessage();
+
+            message.markAsSent();
+
             assertThat(message.getProcessedAt()).isNotNull();
         }
     }
 
     @Nested
-    @DisplayName("registerFailure")
+    @DisplayName("registerFailure()")
     class RegisterFailure {
 
         @Test
-        @DisplayName("should increment attempts and keep PENDING status when below the limit")
-        void shouldIncrementAttempts_whenBelowMaxAttempts() {
-            OutboxMessage message = OutboxMessage.of("routing.key", "payload");
+        @DisplayName("increments the attempts counter")
+        void incrementsAttempts() {
+            OutboxMessage message = newPendingMessage();
 
-            message.registerFailure(3);
+            message.registerFailure(MAX_ATTEMPTS);
 
             assertThat(message.getAttempts()).isEqualTo(1);
-            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
         }
 
         @Test
-        @DisplayName("should change status to FAILED when the max attempts limit is reached")
-        void shouldMarkAsFailed_whenMaxAttemptsReached() {
-            OutboxMessage message = OutboxMessage.of("routing.key", "payload");
+        @DisplayName("keeps status as PENDING while below the max attempts limit")
+        void keepsPendingWhileBelowMaxAttempts() {
+            OutboxMessage message = newPendingMessage();
 
-            message.registerFailure(1);
+            for (int i = 0; i < MAX_ATTEMPTS - 1; i++) {
+                message.registerFailure(MAX_ATTEMPTS);
+            }
 
-            assertThat(message.getAttempts()).isEqualTo(1);
-            assertThat(message.getStatus()).isEqualTo(OutboxStatus.FAILED);
+            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
+            assertThat(message.getAttempts()).isEqualTo(MAX_ATTEMPTS - 1);
         }
 
         @Test
-        @DisplayName("should mark as FAILED only after exhausting all attempts")
-        void shouldMarkAsFailedOnlyAfterReachingLimit() {
-            OutboxMessage message = OutboxMessage.of("routing.key", "payload");
+        @DisplayName("transitions status to FAILED when max attempts is reached")
+        void transitionsToFailedAtMaxAttempts() {
+            OutboxMessage message = newPendingMessage();
 
-            message.registerFailure(3);
-            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
+            for (int i = 0; i < MAX_ATTEMPTS; i++) {
+                message.registerFailure(MAX_ATTEMPTS);
+            }
 
-            message.registerFailure(3);
-            assertThat(message.getStatus()).isEqualTo(OutboxStatus.PENDING);
-
-            message.registerFailure(3);
             assertThat(message.getStatus()).isEqualTo(OutboxStatus.FAILED);
-            assertThat(message.getAttempts()).isEqualTo(3);
         }
     }
 }
