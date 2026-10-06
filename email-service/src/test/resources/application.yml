@@ -1,0 +1,12 @@
+spring:
+  config:
+    import: ""
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+app:
+  mail:
+    from: test@example.com
