@@ -1,5 +1,6 @@
 package com.example.events_service.service;
 
+import com.example.events_service.TestcontainersConfiguration;
 import com.example.events_service.domain.Event;
 import com.example.events_service.domain.OutboxMessage;
 import com.example.events_service.domain.Subscription;
@@ -33,7 +34,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import({
         EventService.class,
         OutboxService.class,
-        EventServiceIT.TestConfig.class
+        EventServiceIT.TestConfig.class,
+        TestcontainersConfiguration.class
 })
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @DisplayName("EventService — integration")
