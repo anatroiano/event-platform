@@ -60,25 +60,20 @@ graph TD
     end
 
     Consumer["email-service<br/>Consumer"]
-
-    Client -->|"HTTP / REST"| Producer
-    Producer -->|"Publica"| Exchange
-    Exchange -->|"Routing: email.#"| Queue
-    Queue -->|"Consome"| Consumer
-
-    Queue -.->|"Falha após retry"| DLX
-    DLX -->|"Mensagem rejeitada"| DLQ
-
-    classDef client fill:#f5f5f5,stroke:#888,color:#1a1a1a
-    classDef service fill:#e8f0fe,stroke:#4a6fa5,color:#1a1a1a
-    classDef broker fill:#fff4e0,stroke:#c98a1b,color:#1a1a1a
-    classDef dead fill:#fde8e8,stroke:#c0392b,color:#1a1a1a
-
+    Client -->|" HTTP / REST "| Producer
+    Producer -->|" Publica "| Exchange
+    Exchange -->|" Routing: email.# "| Queue
+    Queue -->|" Consome "| Consumer
+    Queue -.->|" Falha após retry "| DLX
+    DLX -->|" Mensagem rejeitada "| DLQ
+    classDef client fill: #f5f5f5, stroke: #888, color: #1a1a1a
+    classDef service fill: #e8f0fe, stroke: #4a6fa5, color: #1a1a1a
+    classDef broker fill: #fff4e0, stroke: #c98a1b, color: #1a1a1a
+    classDef dead fill: #fde8e8, stroke: #c0392b, color: #1a1a1a
     class Client client
-    class Producer,Consumer service
-    class Exchange,Queue broker
-    class DLX,DLQ dead
-    end
+    class Producer, Consumer service
+    class Exchange, Queue broker
+    class DLX, DLQ dead
 ```
 
 ---
