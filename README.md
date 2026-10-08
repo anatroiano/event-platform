@@ -48,7 +48,7 @@ serviços acontece de maneira assíncrona utilizando o RabbitMQ para envio e rec
 ### 📐 Diagrama da arquitetura
 
 ```mermaid
-graph TD
+graph LR
     Client["Cliente / Frontend"]
     Producer["events-service - Producer"]
 
