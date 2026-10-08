@@ -50,30 +50,33 @@ serviços acontece de maneira assíncrona utilizando o RabbitMQ para envio e rec
 ```mermaid
 graph TD
     Client["Cliente / Frontend"]
-    Producer["events-service<br/>Producer"]
+    Producer["events-service - Producer"]
 
     subgraph Rabbit["RabbitMQ"]
-        Exchange["notifications.exchange<br/>(Topic Exchange)"]
+        Exchange["notifications.exchange - Topic Exchange"]
         Queue["email.notifications.queue"]
-        DLX["notifications.exchange.dlx<br/>(Dead Letter Exchange)"]
-        DLQ["email.notifications.dlq<br/>(Dead Letter Queue)"]
+        DLX["notifications.exchange.dlx - Dead Letter Exchange"]
+        DLQ["email.notifications.dlq - Dead Letter Queue"]
     end
 
-    Consumer["email-service<br/>Consumer"]
+    Consumer["email-service - Consumer"]
     Client -->|" HTTP / REST "| Producer
     Producer -->|" Publica "| Exchange
     Exchange -->|" Routing: email.# "| Queue
     Queue -->|" Consome "| Consumer
-    Queue -.->|" Falha após retry "| DLX
+    Queue -.->|" Falha apos retry "| DLX
     DLX -->|" Mensagem rejeitada "| DLQ
     classDef client fill: #f5f5f5, stroke: #888, color: #1a1a1a
     classDef service fill: #e8f0fe, stroke: #4a6fa5, color: #1a1a1a
     classDef broker fill: #fff4e0, stroke: #c98a1b, color: #1a1a1a
     classDef dead fill: #fde8e8, stroke: #c0392b, color: #1a1a1a
     class Client client
-    class Producer, Consumer service
-    class Exchange, Queue broker
-    class DLX, DLQ dead
+    class Producer service
+    class Consumer service
+    class Exchange broker
+    class Queue broker
+    class DLX dead
+    class DLQ dead
 ```
 
 ---
