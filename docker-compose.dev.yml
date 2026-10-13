@@ -29,7 +29,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -49,7 +49,27 @@ services:
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - event-network
+
+  certificate-db:
+    image: postgres:18
+    container_name: certificate-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: certificate_service
+    volumes:
+      - certificate-db-volume-dev:/var/lib/postgresql
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -106,9 +126,35 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  certificate-api:
+    image: certificate-service-dev
+    container_name: certificate-service-dev
+    build:
+      context: ./certificate-service
+      dockerfile: Dockerfile-dev
+    ports:
+      - "8083:8083"
+      - "5007:5007"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://certificate-db:5432/certificate_service
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    env_file:
+      - ./certificate-service/.env
+    volumes:
+      - ./certificate-service/src:/app/src
+      - maven-repository:/root/.m2
+    networks:
+      - event-network
+    depends_on:
+      certificate-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
 volumes:
   events-db-volume-dev:
   email-db-volume-dev:
+  certificate-db-volume-dev:
   maven-repository:
 
 networks:
