@@ -23,6 +23,17 @@ spring:
 server:
   port: 8083
 
+app:
+  base-url: ${APP_BASE_URL:http://localhost:8083}
+
+certificate:
+  storage-path: /app/storage
+
 outbox:
   relay:
     delay-ms: ${OUTBOX_RELAY_DELAY_MS:1000}
+
+springdoc:
+  swagger-ui:
+    operations-sorter: method
+    tags-sorter: alpha
