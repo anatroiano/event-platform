@@ -82,7 +82,7 @@ class EventServiceIT {
         @Test
         @DisplayName("persists subscription and creates PENDING outbox message in the same transaction")
         void persistsSubscriptionAndCreatesOutboxMessage() {
-            eventService.registerParticipant(persistedEvent.getId(), "user@example.com");
+            eventService.registerParticipant(persistedEvent.getId(), "user@example.com", "User Example");
 
             List<Subscription> subscriptions = subscriptionRepository.findAll();
             assertThat(subscriptions).hasSize(1);
@@ -99,7 +99,7 @@ class EventServiceIT {
         @Test
         @DisplayName("throws EventNotFoundException when the event id does not exist in the database")
         void throwsWhenEventIdNotFound() {
-            assertThatThrownBy(() -> eventService.registerParticipant("non-existent-id", "user@example.com"))
+            assertThatThrownBy(() -> eventService.registerParticipant("non-existent-id", "user@example.com", "User Example"))
                     .isInstanceOf(EventNotFoundException.class);
 
             assertThat(subscriptionRepository.findAll()).isEmpty();
@@ -109,9 +109,9 @@ class EventServiceIT {
         @Test
         @DisplayName("throws AlreadySubscribedException when the same email is registered twice")
         void throwsWhenEmailAlreadyRegistered() {
-            eventService.registerParticipant(persistedEvent.getId(), "user@example.com");
+            eventService.registerParticipant(persistedEvent.getId(), "user@example.com", "User Example");
 
-            assertThatThrownBy(() -> eventService.registerParticipant(persistedEvent.getId(), "user@example.com"))
+            assertThatThrownBy(() -> eventService.registerParticipant(persistedEvent.getId(), "user@example.com", "User Example"))
                     .isInstanceOf(AlreadySubscribedException.class);
 
             assertThat(subscriptionRepository.countByEventId(persistedEvent.getId())).isEqualTo(1);
@@ -128,9 +128,9 @@ class EventServiceIT {
             );
             Event smallEvent = eventRepository.save(Event.from(dto));
 
-            eventService.registerParticipant(smallEvent.getId(), "first@example.com");
+            eventService.registerParticipant(smallEvent.getId(), "first@example.com", "First User");
 
-            assertThatThrownBy(() -> eventService.registerParticipant(smallEvent.getId(), "second@example.com"))
+            assertThatThrownBy(() -> eventService.registerParticipant(smallEvent.getId(), "second@example.com", "Second User"))
                     .isInstanceOf(EventFullException.class);
 
             assertThat(subscriptionRepository.countByEventId(smallEvent.getId())).isEqualTo(1);
@@ -147,8 +147,8 @@ class EventServiceIT {
             );
             Event secondEvent = eventRepository.save(Event.from(dto));
 
-            eventService.registerParticipant(persistedEvent.getId(), "user1@example.com");
-            eventService.registerParticipant(secondEvent.getId(), "user1@example.com");
+            eventService.registerParticipant(persistedEvent.getId(), "user1@example.com", "User One");
+            eventService.registerParticipant(secondEvent.getId(), "user1@example.com", "User One");
 
             List<Subscription> subscriptions = subscriptionRepository.findAll();
             assertThat(subscriptions).hasSize(2);
@@ -166,7 +166,7 @@ class EventServiceIT {
         @Test
         @DisplayName("marks the subscription as checked-in and persists the change")
         void marksSubscriptionCheckedInAndPersists() {
-            eventService.registerParticipant(persistedEvent.getId(), "user@example.com");
+            eventService.registerParticipant(persistedEvent.getId(), "user@example.com", "User Example");
 
             Subscription subscription = subscriptionRepository.findAll().get(0);
             assertThat(subscription.isCheckedIn()).isFalse();
@@ -181,7 +181,7 @@ class EventServiceIT {
         @Test
         @DisplayName("is idempotent: checkedInAt does not change on second call")
         void isIdempotentOnSecondCall() {
-            eventService.registerParticipant(persistedEvent.getId(), "user@example.com");
+            eventService.registerParticipant(persistedEvent.getId(), "user@example.com", "User Example");
 
             Subscription subscription = subscriptionRepository.findAll().get(0);
             String token = subscription.getCheckinToken();

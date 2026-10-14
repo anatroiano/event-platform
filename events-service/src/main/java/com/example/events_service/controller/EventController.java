@@ -57,7 +57,7 @@ public class EventController {
     })
     @PostMapping("/{eventId}/register")
     public void registerParticipant(@PathVariable String eventId, @RequestBody SubscriptionRequestDTO subscriptionRequest) {
-        eventService.registerParticipant(eventId, subscriptionRequest.participantEmail());
+        eventService.registerParticipant(eventId, subscriptionRequest.participantEmail(), subscriptionRequest.participantName());
     }
 
 }

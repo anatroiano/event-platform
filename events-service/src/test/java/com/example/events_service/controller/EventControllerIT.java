@@ -115,7 +115,7 @@ class EventControllerIT {
     class RegisterParticipant {
 
         private static final String REGISTER_BODY = """
-                {"participantEmail": "user@example.com"}
+                {"participantName": "User Example", "participantEmail": "user@example.com"}
                 """;
 
         @Test
@@ -131,7 +131,7 @@ class EventControllerIT {
         @DisplayName("returns 404 when event does not exist")
         void returns404WhenEventNotFound() throws Exception {
             willThrow(new EventNotFoundException())
-                    .given(eventService).registerParticipant(eq("unknown-id"), anyString());
+                    .given(eventService).registerParticipant(eq("unknown-id"), anyString(), anyString());
 
             mockMvc.perform(post("/events/unknown-id/register")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -144,7 +144,7 @@ class EventControllerIT {
         @DisplayName("returns 409 when participant is already subscribed")
         void returns409WhenAlreadySubscribed() throws Exception {
             willThrow(new AlreadySubscribedException())
-                    .given(eventService).registerParticipant(anyString(), anyString());
+                    .given(eventService).registerParticipant(anyString(), anyString(), anyString());
 
             mockMvc.perform(post("/events/evt-001/register")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -157,7 +157,7 @@ class EventControllerIT {
         @DisplayName("returns 409 when event has reached its maximum capacity")
         void returns409WhenEventFull() throws Exception {
             willThrow(new EventFullException())
-                    .given(eventService).registerParticipant(anyString(), anyString());
+                    .given(eventService).registerParticipant(anyString(), anyString(), anyString());
 
             mockMvc.perform(post("/events/evt-001/register")
                             .contentType(MediaType.APPLICATION_JSON)

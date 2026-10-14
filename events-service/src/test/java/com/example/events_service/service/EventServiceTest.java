@@ -71,7 +71,7 @@ class EventServiceTest {
     }
 
     private Subscription buildSubscription(Event event, String email) {
-        Subscription subscription = Subscription.from(event, email);
+        Subscription subscription = Subscription.from(event, email, "Test User");
         ReflectionTestUtils.setField(subscription, "id", 1L);
         return subscription;
     }
@@ -112,7 +112,7 @@ class EventServiceTest {
         void throwsWhenEventNotFound() {
             given(eventRepository.findByIdForUpdate(EVENT_ID)).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL))
+            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL, "Test User"))
                     .isInstanceOf(EventNotFoundException.class);
 
             then(subscriptionRepository).should(never()).save(any());
@@ -126,7 +126,7 @@ class EventServiceTest {
             given(eventRepository.findByIdForUpdate(EVENT_ID)).willReturn(Optional.of(event));
             given(subscriptionRepository.existsByEventIdAndParticipantEmail(EVENT_ID, EMAIL)).willReturn(true);
 
-            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL))
+            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL, "Test User"))
                     .isInstanceOf(AlreadySubscribedException.class);
 
             then(subscriptionRepository).should(never()).save(any());
@@ -143,7 +143,7 @@ class EventServiceTest {
             given(subscriptionRepository.existsByEventIdAndParticipantEmail(EVENT_ID, EMAIL)).willReturn(false);
             given(subscriptionRepository.countByEventId(EVENT_ID)).willReturn((long) maxParticipants);
 
-            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL))
+            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL, "Test User"))
                     .isInstanceOf(EventFullException.class);
 
             then(subscriptionRepository).should(never()).save(any());
@@ -159,7 +159,7 @@ class EventServiceTest {
             given(subscriptionRepository.existsByEventIdAndParticipantEmail(EVENT_ID, EMAIL)).willReturn(false);
             given(subscriptionRepository.countByEventId(EVENT_ID)).willReturn(0L);
 
-            eventService.registerParticipant(EVENT_ID, EMAIL);
+            eventService.registerParticipant(EVENT_ID, EMAIL, "Test User");
 
             ArgumentCaptor<Subscription> subscriptionCaptor = ArgumentCaptor.forClass(Subscription.class);
             then(subscriptionRepository).should().save(subscriptionCaptor.capture());
@@ -177,7 +177,7 @@ class EventServiceTest {
             given(subscriptionRepository.existsByEventIdAndParticipantEmail(EVENT_ID, EMAIL)).willReturn(false);
             given(subscriptionRepository.countByEventId(EVENT_ID)).willReturn(0L);
 
-            eventService.registerParticipant(EVENT_ID, EMAIL);
+            eventService.registerParticipant(EVENT_ID, EMAIL, "Test User");
 
             ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
             then(outboxService).should().save(any(), payloadCaptor.capture());

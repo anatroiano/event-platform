@@ -27,6 +27,8 @@ public class Event {
 
     private String description;
 
+    private boolean certificateRequestsSent;
+
     protected Event() {
     }
 
