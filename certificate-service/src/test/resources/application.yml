@@ -6,3 +6,6 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+app:
+  base-url: http://localhost:8083
