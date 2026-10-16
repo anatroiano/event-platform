@@ -1,0 +1,30 @@
+# Maven
+target/
+
+# Git
+.git/
+.gitignore
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Environment / secrets
+.env
+.env.*
+
+# Docker
+Dockerfile*
+compose.y*ml
+docker-compose*.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

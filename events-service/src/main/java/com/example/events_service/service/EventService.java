@@ -67,7 +67,7 @@ public class EventService {
         return eventRepository.findUpcoming(Instant.now(), pageable);
     }
 
-    public void registerParticipant(String eventId, String participantEmail) {
+    public void registerParticipant(String eventId, String participantEmail, String participantName) {
 
         log.info("Registering participant - eventId: {}, email: {}", eventId, participantEmail);
 
@@ -87,7 +87,7 @@ public class EventService {
             throw new EventFullException();
         }
 
-        Subscription subscription = Subscription.from(event, participantEmail);
+        Subscription subscription = Subscription.from(event, participantEmail, participantName);
         subscriptionRepository.save(subscription);
 
         sendSubscriptionConfirmation(event, subscription);

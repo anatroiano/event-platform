@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 public interface EventRepository extends JpaRepository<Event, String> {
@@ -28,4 +29,11 @@ public interface EventRepository extends JpaRepository<Event, String> {
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "3000"))
     @Query("SELECT e FROM Event e WHERE e.id = :id")
     Optional<Event> findByIdForUpdate(@Param("id") String id);
+
+    @Query("""
+                SELECT e FROM Event e
+                WHERE e.date <= :now
+                  AND e.certificateRequestsSent = false
+            """)
+    List<Event> findFinishedEventsWithoutCertificateRequests(Instant now);
 }

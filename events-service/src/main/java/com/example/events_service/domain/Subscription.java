@@ -30,6 +30,8 @@ public class Subscription {
     @Column(nullable = false)
     private String participantEmail;
 
+    private String participantName;
+
     @Column(nullable = false, unique = true, updatable = false)
     private String checkinToken;
 
@@ -38,14 +40,15 @@ public class Subscription {
     private Subscription() {
     }
 
-    private Subscription(Event event, String participantEmail) {
+    private Subscription(Event event, String participantEmail, String participantName) {
         this.event = event;
         this.participantEmail = participantEmail;
+        this.participantName = participantName;
         this.checkinToken = UUID.randomUUID().toString();
     }
 
-    public static Subscription from(Event event, String participantEmail) {
-        return new Subscription(event, participantEmail);
+    public static Subscription from(Event event, String participantEmail, String participantName) {
+        return new Subscription(event, participantEmail, participantName);
     }
 
     public boolean isCheckedIn() {

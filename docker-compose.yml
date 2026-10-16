@@ -27,7 +27,7 @@ services:
     volumes:
       - events-db-volume:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -45,7 +45,25 @@ services:
     volumes:
       - email-db-volume:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - event-network
+
+  certificate-db:
+    image: postgres:18
+    container_name: certificate-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: certificate_service
+    volumes:
+      - certificate-db-volume:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -96,9 +114,32 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  certificate-api:
+    image: certificate-service
+    container_name: certificate-service
+    build:
+      context: ./certificate-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://certificate-db:5432/certificate_service
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    env_file:
+      - ./certificate-service/.env
+    networks:
+      - event-network
+    depends_on:
+      certificate-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
 volumes:
   events-db-volume:
   email-db-volume:
+  certificate-db-volume:
 
 networks:
   event-network:

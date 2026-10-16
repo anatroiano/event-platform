@@ -14,7 +14,8 @@ public class EmailTemplateResolver {
     private final TemplateEngine templateEngine;
 
     private static final Map<String, String> SUBJECTS = Map.of(
-            "subscription-confirmation", "Confirmação de inscrição"
+            "subscription-confirmation", "Confirmação de inscrição",
+            "certificate", "Seu certificado de participação está disponível"
     );
 
     public String resolveSubject(String templateId) {
