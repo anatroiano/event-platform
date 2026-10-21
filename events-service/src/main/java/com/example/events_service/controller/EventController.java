@@ -3,6 +3,7 @@ package com.example.events_service.controller;
 import com.example.events_service.domain.Event;
 import com.example.events_service.dto.EventRequestDTO;
 import com.example.events_service.dto.SubscriptionRequestDTO;
+import com.example.events_service.exception.EventNotFoundException;
 import com.example.events_service.service.EventService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -44,6 +45,19 @@ public class EventController {
     @GetMapping("/upcoming")
     public ResponseEntity<Page<Event>> getUpcoming(@ParameterObject Pageable pageable) {
         return ResponseEntity.ok(eventService.findUpcoming(pageable));
+    }
+
+    @Operation(summary = "Get event by ID")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Event found"),
+            @ApiResponse(responseCode = "404", description = "Event not found")
+    })
+    @GetMapping("/{id}")
+    public ResponseEntity<Event> getOne(@PathVariable String id) {
+
+        return eventService.findOne(id)
+                .map(ResponseEntity::ok)
+                .orElseThrow(EventNotFoundException::new);
     }
 
     @Operation(summary = "Register participant", description = "Registers a participant to a specific event")

@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @Transactional
@@ -65,6 +66,14 @@ public class EventService {
         log.info("Fetching upcoming events - page: {}, size: {}", pageable.getPageNumber(), pageable.getPageSize());
 
         return eventRepository.findUpcoming(Instant.now(), pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Event> findOne(String id) {
+
+        log.info("Fetching event by id: {}", id);
+
+        return eventRepository.findById(id);
     }
 
     public void registerParticipant(String eventId, String participantEmail, String participantName) {
