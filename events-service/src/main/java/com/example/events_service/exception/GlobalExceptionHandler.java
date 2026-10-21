@@ -23,6 +23,11 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.CONFLICT, ex);
     }
 
+    @ExceptionHandler(EventFinishedException.class)
+    public ResponseEntity<ErrorResponse> handleEventFinished(EventFinishedException ex) {
+        return buildResponse(HttpStatus.CONFLICT, ex);
+    }
+
     @ExceptionHandler(AlreadySubscribedException.class)
     public ResponseEntity<ErrorResponse> handleAlreadySubscribed(AlreadySubscribedException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex);

@@ -1,6 +1,7 @@
 package com.example.events_service.controller;
 
 import com.example.events_service.dto.CheckinInfoDTO;
+import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.SubscriptionNotFoundException;
 import com.example.events_service.service.EventService;
 import org.junit.jupiter.api.DisplayName;
@@ -65,6 +66,19 @@ class CheckinControllerIT {
     @Nested
     @DisplayName("POST /checkin/{token}")
     class ConfirmCheckin {
+
+        @Test
+        @DisplayName("returns 409 when event has finished")
+        void returns409WhenEventFinished() throws Exception {
+            willThrow(new EventFinishedException())
+                    .given(eventService).checkIn("valid-token");
+
+            mockMvc.perform(post("/checkin/valid-token")
+                            .contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.status").value(409))
+                    .andExpect(jsonPath("$.message").value("Evento já finalizado!"));
+        }
 
         @Test
         @DisplayName("returns 204 when check-in is confirmed successfully")

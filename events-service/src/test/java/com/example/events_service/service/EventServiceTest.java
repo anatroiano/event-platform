@@ -5,6 +5,7 @@ import com.example.events_service.domain.Subscription;
 import com.example.events_service.dto.CheckinInfoDTO;
 import com.example.events_service.dto.EventRequestDTO;
 import com.example.events_service.exception.AlreadySubscribedException;
+import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.EventFullException;
 import com.example.events_service.exception.EventNotFoundException;
 import com.example.events_service.exception.SubscriptionNotFoundException;
@@ -134,6 +135,20 @@ class EventServiceTest {
         }
 
         @Test
+        @DisplayName("rejects registration for a finished event without creating a subscription or notification")
+        void throwsWhenEventIsFinished() {
+            Event event = buildEvent(EVENT_ID, 100);
+            event.setDate(Instant.now().minusSeconds(60));
+            given(eventRepository.findByIdForUpdate(EVENT_ID)).willReturn(Optional.of(event));
+
+            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL, "Test User"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            then(subscriptionRepository).shouldHaveNoInteractions();
+            then(outboxService).shouldHaveNoInteractions();
+        }
+
+        @Test
         @DisplayName("throws EventFullException when event has reached its maximum capacity")
         void throwsWhenEventIsFull() {
             int maxParticipants = 50;
@@ -256,6 +271,37 @@ class EventServiceTest {
             eventService.checkIn("my-token");
 
             assertThat(subscription.isCheckedIn()).isTrue();
+        }
+
+        @Test
+        @DisplayName("rejects check-in for a finished event without changing attendance")
+        void throwsWhenEventIsFinished() {
+            Event event = buildEvent("evt-xyz", 100);
+            event.setDate(Instant.now().minusSeconds(60));
+            Subscription subscription = buildSubscription(event, "user@example.com");
+            given(subscriptionRepository.findByCheckinToken("my-token")).willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.checkIn("my-token"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            assertThat(subscription.isCheckedIn()).isFalse();
+            assertThat(subscription.getCheckedInAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("rejects repeated check-in after the event has finished and preserves original attendance")
+        void throwsWhenAlreadyCheckedInAndEventIsFinished() {
+            Event event = buildEvent("evt-xyz", 100);
+            Subscription subscription = buildSubscription(event, "user@example.com");
+            subscription.checkIn();
+            Instant firstCheckinTime = subscription.getCheckedInAt();
+            event.setDate(Instant.now().minusSeconds(60));
+            given(subscriptionRepository.findByCheckinToken("my-token")).willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.checkIn("my-token"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            assertThat(subscription.getCheckedInAt()).isEqualTo(firstCheckinTime);
         }
 
         @Test

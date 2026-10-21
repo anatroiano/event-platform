@@ -5,6 +5,7 @@ import com.example.events_service.domain.Subscription;
 import com.example.events_service.dto.CheckinInfoDTO;
 import com.example.events_service.dto.EventRequestDTO;
 import com.example.events_service.exception.AlreadySubscribedException;
+import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.EventFullException;
 import com.example.events_service.exception.EventNotFoundException;
 import com.example.events_service.exception.SubscriptionNotFoundException;
@@ -86,6 +87,8 @@ public class EventService {
                     return new EventNotFoundException();
                 });
 
+        validateEventNotFinished(event);
+
         if (subscriptionRepository.existsByEventIdAndParticipantEmail(eventId, participantEmail)) {
             log.warn("Participant already subscribed - eventId: {}, email: {}", eventId, participantEmail);
             throw new AlreadySubscribedException();
@@ -132,12 +135,21 @@ public class EventService {
                     return new SubscriptionNotFoundException();
                 });
 
+        validateEventNotFinished(subscription.getEvent());
+
         if (subscription.isCheckedIn()) {
             log.info("Participant already checked in - subscriptionId: {}", subscription.getId());
             return;
         }
 
         subscription.checkIn();
+    }
+
+    private void validateEventNotFinished(Event event) {
+        if (!event.getDate().isAfter(Instant.now())) {
+            log.warn("Cannot register or check-in participant - event is finished - eventId: {}", event.getId());
+            throw new EventFinishedException();
+        }
     }
 
     private boolean isEventFull(Event event) {

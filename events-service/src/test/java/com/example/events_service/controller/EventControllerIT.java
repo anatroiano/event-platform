@@ -3,6 +3,7 @@ package com.example.events_service.controller;
 import com.example.events_service.domain.Event;
 import com.example.events_service.dto.EventRequestDTO;
 import com.example.events_service.exception.AlreadySubscribedException;
+import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.EventFullException;
 import com.example.events_service.exception.EventNotFoundException;
 import com.example.events_service.service.EventService;
@@ -151,6 +152,20 @@ class EventControllerIT {
                             .content(REGISTER_BODY))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.status").value(409));
+        }
+
+        @Test
+        @DisplayName("returns 409 when event has finished")
+        void returns409WhenEventFinished() throws Exception {
+            willThrow(new EventFinishedException())
+                    .given(eventService).registerParticipant(anyString(), anyString(), anyString());
+
+            mockMvc.perform(post("/events/evt-001/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REGISTER_BODY))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.status").value(409))
+                    .andExpect(jsonPath("$.message").value("Evento já finalizado!"));
         }
 
         @Test
