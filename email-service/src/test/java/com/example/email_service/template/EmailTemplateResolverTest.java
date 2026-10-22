@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -59,6 +60,27 @@ class EmailTemplateResolverTest {
     @Nested
     @DisplayName("render()")
     class Render {
+
+        @Test
+        void allowsMissingOptionalTemplateData() {
+            given(templateEngine.process(eq("subscription-confirmation"), any(Context.class)))
+                    .willReturn("<html>rendered</html>");
+
+            String result = templateResolver.render("subscription-confirmation", null);
+
+            ArgumentCaptor<Context> contextCaptor = ArgumentCaptor.forClass(Context.class);
+            then(templateEngine).should().process(eq("subscription-confirmation"), contextCaptor.capture());
+            assertThat(result).isEqualTo("<html>rendered</html>");
+            assertThat(contextCaptor.getValue().getVariableNames()).isEmpty();
+        }
+
+        @Test
+        void rejectsMissingTemplateBeforeRendering() {
+            assertThatThrownBy(() -> templateResolver.render(null, null))
+                    .isInstanceOf(UnknownTemplateException.class);
+
+            then(templateEngine).shouldHaveNoInteractions();
+        }
 
         @Test
         @DisplayName("delegates to Thymeleaf engine with the correct templateId")

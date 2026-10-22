@@ -7,8 +7,10 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Transactional
 @RequiredArgsConstructor
 public class EmailDispatchService {
 
@@ -28,29 +30,15 @@ public class EmailDispatchService {
                 messageId, templateId, recipientEmail);
 
         if (!processedMessageService.tryClaim(messageId)) {
-            log.info("Message already claimed by another delivery, skipping: messageId={}", messageId);
+            log.info("Message already processed, skipping: messageId={}", messageId);
             return;
         }
 
-        try {
-            String subject = templateResolver.resolveSubject(templateId);
-            String htmlBody = templateResolver.render(templateId, event.templateData());
+        String subject = templateResolver.resolveSubject(templateId);
+        String htmlBody = templateResolver.render(templateId, event.templateData());
 
-            emailSender.send(recipientEmail, subject, htmlBody);
+        emailSender.send(recipientEmail, subject, htmlBody);
 
-            log.info("Email notification dispatched successfully: messageId={}", messageId);
-
-        } catch (RuntimeException ex) {
-            releaseClaim(messageId);
-            throw ex;
-        }
-    }
-
-    private void releaseClaim(String messageId) {
-        try {
-            processedMessageService.release(messageId);
-        } catch (RuntimeException ex) {
-            log.error("Failed to release idempotency claim: messageId={}", messageId, ex);
-        }
+        log.info("Email notification dispatched successfully: messageId={}", messageId);
     }
 }

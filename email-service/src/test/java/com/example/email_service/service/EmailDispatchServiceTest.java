@@ -21,7 +21,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
@@ -48,7 +47,7 @@ class EmailDispatchServiceTest {
                 "subscription-confirmation",
                 "user@example.com",
                 Map.of("eventTitle", "Spring Boot Workshop"),
-                Instant.now()
+                Instant.parse("2026-01-01T12:00:00Z")
         );
     }
 
@@ -86,8 +85,8 @@ class EmailDispatchServiceTest {
         }
 
         @Test
-        @DisplayName("releases claim when emailSender throws, then re-throws the exception")
-        void releasesClaimAndRethrowsWhenSenderFails() {
+        @DisplayName("propagates delivery failures so the transaction can roll back")
+        void propagatesDeliveryFailure() {
             EmailNotificationEvent event = buildEvent(UUID.randomUUID().toString());
             EmailDeliveryException deliveryFailure = new EmailDeliveryException("SMTP error", new RuntimeException());
 
@@ -99,24 +98,20 @@ class EmailDispatchServiceTest {
             assertThatThrownBy(() -> emailDispatchService.dispatch(event))
                     .isSameAs(deliveryFailure);
 
-            then(processedMessageService).should().release(event.messageId());
         }
 
         @Test
-        @DisplayName("does not propagate exception when release itself fails")
-        void doesNotPropagateExceptionFromReleaseClaim() {
+        @DisplayName("does not send email when template rendering fails")
+        void propagatesRenderingFailure() {
             EmailNotificationEvent event = buildEvent(UUID.randomUUID().toString());
-
+            RuntimeException failure = new RuntimeException("Template rendering failed");
             given(processedMessageService.tryClaim(event.messageId())).willReturn(true);
             given(templateResolver.resolveSubject(any())).willReturn("Subject");
-            given(templateResolver.render(any(), any())).willReturn("<html/>");
-            willThrow(new EmailDeliveryException("SMTP error", new RuntimeException()))
-                    .given(emailSender).send(any(), any(), any());
-            willThrow(new RuntimeException("DB unavailable"))
-                    .given(processedMessageService).release(event.messageId());
+            given(templateResolver.render(any(), any())).willThrow(failure);
 
-            assertThatThrownBy(() -> emailDispatchService.dispatch(event))
-                    .isInstanceOf(EmailDeliveryException.class);
+            assertThatThrownBy(() -> emailDispatchService.dispatch(event)).isSameAs(failure);
+
+            then(emailSender).shouldHaveNoInteractions();
         }
     }
 }

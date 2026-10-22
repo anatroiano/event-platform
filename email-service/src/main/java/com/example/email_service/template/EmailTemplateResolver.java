@@ -6,6 +6,7 @@ import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
 import java.util.Map;
+import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
@@ -27,17 +28,15 @@ public class EmailTemplateResolver {
         requireKnownTemplate(templateId);
 
         Context context = new Context();
-        if (data != null) {
-            context.setVariables(data);
-        }
+        Optional.ofNullable(data).ifPresent(context::setVariables);
 
         return templateEngine.process(templateId, context);
     }
 
     private static void requireKnownTemplate(String templateId) {
-        if (templateId == null || !SUBJECTS.containsKey(templateId)) {
-            throw new UnknownTemplateException(templateId);
-        }
+        Optional.ofNullable(templateId)
+                .filter(SUBJECTS::containsKey)
+                .orElseThrow(() -> new UnknownTemplateException(templateId));
     }
 }
 
