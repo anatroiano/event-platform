@@ -5,10 +5,13 @@ import com.example.events_service.repository.OutboxRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
-@Component
+@Service
+@Transactional(propagation = Propagation.MANDATORY)
 @RequiredArgsConstructor
 public class OutboxService {
 

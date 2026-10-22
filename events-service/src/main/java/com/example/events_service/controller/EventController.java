@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -31,7 +32,7 @@ public class EventController {
             @ApiResponse(responseCode = "400", description = "Invalid input data")
     })
     @PostMapping
-    public ResponseEntity<Event> create(@RequestBody EventRequestDTO eventRequest) {
+    public ResponseEntity<Event> create(@Valid @RequestBody EventRequestDTO eventRequest) {
         return ResponseEntity.status(HttpStatus.CREATED).body(eventService.create(eventRequest));
     }
 
@@ -70,7 +71,7 @@ public class EventController {
             )
     })
     @PostMapping("/{eventId}/register")
-    public void registerParticipant(@PathVariable String eventId, @RequestBody SubscriptionRequestDTO subscriptionRequest) {
+    public void registerParticipant(@PathVariable String eventId, @Valid @RequestBody SubscriptionRequestDTO subscriptionRequest) {
         eventService.registerParticipant(eventId, subscriptionRequest.participantEmail(), subscriptionRequest.participantName());
     }
 

@@ -9,7 +9,9 @@ import com.example.events_service.enums.OutboxStatus;
 import com.example.events_service.repository.EventRepository;
 import com.example.events_service.repository.OutboxRepository;
 import com.example.events_service.repository.SubscriptionRepository;
+import com.example.events_service.service.CertificateGenerationService;
 import com.example.events_service.service.OutboxService;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -22,7 +24,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @Import({
         CertificateGenerationScheduler.class,
+        CertificateGenerationService.class,
         OutboxService.class,
         CertificateGenerationSchedulerIT.TestConfig.class,
         TestcontainersConfiguration.class
@@ -38,8 +43,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("CertificateGenerationScheduler — integration")
 class CertificateGenerationSchedulerIT {
 
+    private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
+
     @TestConfiguration
     static class TestConfig {
+
+        @Bean
+        Clock clock() {
+            return Clock.fixed(NOW, ZoneOffset.UTC);
+        }
+
         @Bean
         JsonMapper jsonMapper() {
             return JsonMapper.builder().build();
@@ -57,6 +70,9 @@ class CertificateGenerationSchedulerIT {
 
     @Autowired
     private OutboxRepository outboxRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private Event finishedEvent;
     private Event futureEvent;
@@ -87,6 +103,20 @@ class CertificateGenerationSchedulerIT {
     class RequestCertificatesForFinishedEvents {
 
         @Test
+        @DisplayName("processes events exactly at the deadline")
+        void processesEventAtDeadline() {
+            finishedEvent.setDate(NOW);
+            eventRepository.saveAndFlush(finishedEvent);
+
+            scheduler.requestCertificatesForFinishedEvents();
+
+            entityManager.flush();
+            entityManager.clear();
+            Event updated = eventRepository.findById(finishedEvent.getId()).orElseThrow();
+            assertThat(updated.isCertificateRequestsSent()).isTrue();
+        }
+
+        @Test
         @DisplayName("does nothing when all finished events already had certificate requests sent")
         void doesNothingWhenNoEligibleEvents() {
             finishedEvent.setCertificateRequestsSent(true);
@@ -101,7 +131,7 @@ class CertificateGenerationSchedulerIT {
         @DisplayName("does not create outbox messages for future events")
         void ignoresFutureEvents() {
             Subscription sub = subscriptionRepository.save(Subscription.from(futureEvent, "user@example.com", "User"));
-            sub.checkIn();
+            sub.checkIn(Instant.parse("2019-12-31T12:00:00Z"));
             subscriptionRepository.save(sub);
 
             scheduler.requestCertificatesForFinishedEvents();
@@ -113,9 +143,9 @@ class CertificateGenerationSchedulerIT {
         @DisplayName("creates one PENDING outbox message per checked-in participant of a finished event")
         void createsOutboxMessageForEachCheckedInParticipant() {
             Subscription sub1 = Subscription.from(finishedEvent, "user1@example.com", "User One");
-            sub1.checkIn();
+            sub1.checkIn(Instant.parse("2019-12-31T12:00:00Z"));
             Subscription sub2 = Subscription.from(finishedEvent, "user2@example.com", "User Two");
-            sub2.checkIn();
+            sub2.checkIn(Instant.parse("2019-12-31T12:00:00Z"));
             subscriptionRepository.saveAll(List.of(sub1, sub2));
 
             scheduler.requestCertificatesForFinishedEvents();
@@ -130,7 +160,7 @@ class CertificateGenerationSchedulerIT {
         @DisplayName("outbox payload contains the correct participant and event information")
         void outboxPayloadContainsCorrectData() {
             Subscription sub = Subscription.from(finishedEvent, "john.doe@email.com", "John Doe");
-            sub.checkIn();
+            sub.checkIn(Instant.parse("2019-12-31T12:00:00Z"));
             subscriptionRepository.save(sub);
 
             scheduler.requestCertificatesForFinishedEvents();
@@ -156,11 +186,13 @@ class CertificateGenerationSchedulerIT {
         @DisplayName("marks finished event as certificateRequestsSent=true after processing")
         void marksCertificateRequestsSentOnEvent() {
             Subscription sub = Subscription.from(finishedEvent, "user@example.com", "User");
-            sub.checkIn();
+            sub.checkIn(Instant.parse("2019-12-31T12:00:00Z"));
             subscriptionRepository.save(sub);
 
             scheduler.requestCertificatesForFinishedEvents();
 
+            entityManager.flush();
+            entityManager.clear();
             Event updated = eventRepository.findById(finishedEvent.getId()).orElseThrow();
             assertThat(updated.isCertificateRequestsSent()).isTrue();
         }
@@ -179,10 +211,12 @@ class CertificateGenerationSchedulerIT {
         @DisplayName("second scheduler run does not re-process already-flagged events")
         void secondRunDoesNotReprocessFlaggedEvent() {
             Subscription sub = Subscription.from(finishedEvent, "user@example.com", "User");
-            sub.checkIn();
+            sub.checkIn(Instant.parse("2019-12-31T12:00:00Z"));
             subscriptionRepository.save(sub);
 
             scheduler.requestCertificatesForFinishedEvents();
+            entityManager.flush();
+            entityManager.clear();
             scheduler.requestCertificatesForFinishedEvents();
 
             assertThat(outboxRepository.findAll()).hasSize(1);

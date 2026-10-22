@@ -8,6 +8,7 @@ import com.example.events_service.exception.AlreadySubscribedException;
 import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.EventFullException;
 import com.example.events_service.exception.EventNotFoundException;
+import com.example.events_service.exception.InvalidDataException;
 import com.example.events_service.exception.SubscriptionNotFoundException;
 import com.example.events_service.messaging.event.EmailNotificationEvent;
 import com.example.events_service.repository.EventRepository;
@@ -21,6 +22,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +43,8 @@ public class EventService {
 
     private final OutboxService outboxService;
 
+    private final Clock clock;
+
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
@@ -48,7 +52,9 @@ public class EventService {
 
         log.info("Creating new event");
 
-        Event event = Event.from(eventRequest);
+        Event event = Optional.ofNullable(eventRequest)
+                .map(Event::from)
+                .orElseThrow(() -> new InvalidDataException("Os dados do evento são obrigatórios."));
 
         return eventRepository.save(event);
     }
@@ -66,7 +72,7 @@ public class EventService {
 
         log.info("Fetching upcoming events - page: {}, size: {}", pageable.getPageNumber(), pageable.getPageSize());
 
-        return eventRepository.findUpcoming(Instant.now(), pageable);
+        return eventRepository.findUpcoming(clock.instant(), pageable);
     }
 
     @Transactional(readOnly = true)
@@ -87,7 +93,7 @@ public class EventService {
                     return new EventNotFoundException();
                 });
 
-        validateEventNotFinished(event);
+        validateEventNotFinished(event, clock.instant());
 
         if (subscriptionRepository.existsByEventIdAndParticipantEmail(eventId, participantEmail)) {
             log.warn("Participant already subscribed - eventId: {}, email: {}", eventId, participantEmail);
@@ -102,7 +108,7 @@ public class EventService {
         Subscription subscription = Subscription.from(event, participantEmail, participantName);
         subscriptionRepository.save(subscription);
 
-        sendSubscriptionConfirmation(event, subscription);
+        sendSubscriptionConfirmation(event.getTitle(), subscription);
     }
 
     @Transactional(readOnly = true)
@@ -116,7 +122,7 @@ public class EventService {
                     return new SubscriptionNotFoundException();
                 });
 
-        Event event = subscription.getEvent();
+        Event event = findSubscriptionEvent(subscription);
 
         return new CheckinInfoDTO(
                 event.getTitle(),
@@ -129,27 +135,33 @@ public class EventService {
 
         log.info("Confirming participant check-in");
 
-        Subscription subscription = subscriptionRepository.findByCheckinToken(token)
+        Subscription subscription = subscriptionRepository.findByCheckinTokenForUpdate(token)
                 .orElseThrow(() -> {
                     log.warn("Cannot check-in - subscription not found");
                     return new SubscriptionNotFoundException();
                 });
 
-        validateEventNotFinished(subscription.getEvent());
+        Instant now = clock.instant();
+        validateEventNotFinished(findSubscriptionEvent(subscription), now);
 
         if (subscription.isCheckedIn()) {
             log.info("Participant already checked in - subscriptionId: {}", subscription.getId());
             return;
         }
 
-        subscription.checkIn();
+        subscription.checkIn(now);
     }
 
-    private void validateEventNotFinished(Event event) {
-        if (!event.getDate().isAfter(Instant.now())) {
+    private void validateEventNotFinished(Event event, Instant now) {
+        if (!event.getDate().isAfter(now)) {
             log.warn("Cannot register or check-in participant - event is finished - eventId: {}", event.getId());
             throw new EventFinishedException();
         }
+    }
+
+    private Event findSubscriptionEvent(Subscription subscription) {
+        return Optional.ofNullable(subscription.getEvent())
+                .orElseThrow(EventNotFoundException::new);
     }
 
     private boolean isEventFull(Event event) {
@@ -159,7 +171,7 @@ public class EventService {
         return registeredParticipants >= event.getMaxParticipants();
     }
 
-    private void sendSubscriptionConfirmation(Event event, Subscription subscription) {
+    private void sendSubscriptionConfirmation(String eventTitle, Subscription subscription) {
 
         String checkinUrl = buildCheckinUrl(subscription);
 
@@ -167,7 +179,7 @@ public class EventService {
                 SUBSCRIPTION_CONFIRMATION_TEMPLATE,
                 subscription.getParticipantEmail(),
                 Map.of(
-                        "eventTitle", event.getTitle(),
+                        "eventTitle", eventTitle,
                         "subscriberEmail", subscription.getParticipantEmail(),
                         "checkinUrl", checkinUrl
                 )

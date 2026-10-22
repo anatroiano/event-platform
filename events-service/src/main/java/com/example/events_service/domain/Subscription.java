@@ -1,10 +1,16 @@
 package com.example.events_service.domain;
 
+import com.example.events_service.exception.InvalidDataException;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Entity
@@ -25,11 +31,16 @@ public class Subscription {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "event_id", nullable = false)
+    @NotNull(message = "O evento da inscrição é obrigatório.")
     private Event event;
 
     @Column(nullable = false)
+    @NotBlank(message = "O e-mail do participante é obrigatório.")
+    @Email(message = "O e-mail do participante deve ser válido.")
+    @Size(max = 255, message = "O e-mail do participante deve ter no máximo 255 caracteres.")
     private String participantEmail;
 
+    @Size(max = 255, message = "O nome do participante deve ter no máximo 255 caracteres.")
     private String participantName;
 
     @Column(nullable = false, unique = true, updatable = false)
@@ -52,12 +63,12 @@ public class Subscription {
     }
 
     public boolean isCheckedIn() {
-        return checkedInAt != null;
+        return Optional.ofNullable(checkedInAt).isPresent();
     }
 
-    public void checkIn() {
-        if (checkedInAt == null) {
-            checkedInAt = Instant.now();
-        }
+    public void checkIn(Instant checkedInAt) {
+        Instant checkinTime = Optional.ofNullable(checkedInAt)
+                .orElseThrow(() -> new InvalidDataException("O horário do check-in é obrigatório."));
+        this.checkedInAt = Optional.ofNullable(this.checkedInAt).orElse(checkinTime);
     }
 }

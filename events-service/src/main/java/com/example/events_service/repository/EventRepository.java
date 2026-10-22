@@ -30,6 +30,8 @@ public interface EventRepository extends JpaRepository<Event, String> {
     @Query("SELECT e FROM Event e WHERE e.id = :id")
     Optional<Event> findByIdForUpdate(@Param("id") String id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "-2"))
     @Query("""
                 SELECT e FROM Event e
                 WHERE e.date <= :now
