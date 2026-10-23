@@ -1,8 +1,6 @@
 package com.example.certificate_service.controller;
 
-import com.example.certificate_service.domain.Certificate;
-import com.example.certificate_service.repository.CertificateRepository;
-import com.example.certificate_service.service.PdfStorageService;
+import com.example.certificate_service.service.CertificateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -26,12 +24,12 @@ public class CertificateController {
 
     private static final Logger log = LoggerFactory.getLogger(CertificateController.class);
 
-    private final CertificateRepository certificateRepository;
-    private final PdfStorageService pdfStorageService;
+    private final CertificateService certificateService;
 
     @Operation(summary = "Download certificate PDF", description = "Downloads the PDF certificate for the given certificate ID")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Certificate PDF returned"),
+            @ApiResponse(responseCode = "202", description = "Certificate PDF is not yet available"),
             @ApiResponse(responseCode = "404", description = "Certificate not found")
     })
     @GetMapping("/{certificateId}/download")
@@ -39,23 +37,12 @@ public class CertificateController {
 
         log.info("Certificate download requested: {}", certificateId);
 
-        Certificate certificate = certificateRepository.findById(certificateId)
-                .orElseThrow(() -> {
-                    log.warn("Certificate not found: {}", certificateId);
-                    return new CertificateNotFoundException(certificateId);
-                });
-
-        if (certificate.getFileKey() == null) {
-            log.warn("Certificate file not yet available: {}", certificateId);
-            return ResponseEntity.accepted().build();
-        }
-
-        byte[] pdf = pdfStorageService.load(certificate.getFileKey());
-
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"certificate-" + certificateId + ".pdf\"")
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(pdf);
+        return certificateService.download(certificateId)
+                .map(pdf -> ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                "attachment; filename=\"certificate-" + certificateId + ".pdf\"")
+                        .contentType(MediaType.APPLICATION_PDF)
+                        .body(pdf))
+                .orElseGet(() -> ResponseEntity.accepted().build());
     }
 }

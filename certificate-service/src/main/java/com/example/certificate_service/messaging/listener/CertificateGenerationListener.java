@@ -3,6 +3,7 @@ package com.example.certificate_service.messaging.listener;
 import com.example.certificate_service.config.RabbitConfig;
 import com.example.certificate_service.dto.CertificateRequest;
 import com.example.certificate_service.service.CertificateService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,7 @@ public class CertificateGenerationListener {
     private final CertificateService certificateService;
 
     @RabbitListener(queues = RabbitConfig.CERTIFICATE_QUEUE)
-    public void handle(CertificateRequest request) {
+    public void handle(@Valid CertificateRequest request) {
         log.info("Certificate generation requested for subscriptionId: {}", request.subscriptionId());
         certificateService.generate(request);
     }

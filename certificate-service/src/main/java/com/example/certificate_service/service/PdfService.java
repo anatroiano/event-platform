@@ -10,10 +10,12 @@ import org.springframework.stereotype.Service;
 import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class PdfService {
@@ -25,11 +27,14 @@ public class PdfService {
             .withZone(ZoneId.of("America/Sao_Paulo"));
 
     public byte[] generate(String title, String participantName, String eventName, Instant issuedAt, String identifier) {
-        try (PDDocument document = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+        try (PDDocument document = new PDDocument();
+             ByteArrayOutputStream output = new ByteArrayOutputStream();
+             InputStream regularFont = loadFontResource("/fonts/Roboto-Regular.ttf");
+             InputStream boldFont = loadFontResource("/fonts/Roboto-Bold.ttf")) {
             document.addPage(new PDPage(new PDRectangle(842, 595)));
 
-            PDType0Font regular = PDType0Font.load(document, getClass().getResourceAsStream("/fonts/Roboto-Regular.ttf"));
-            PDType0Font bold = PDType0Font.load(document, getClass().getResourceAsStream("/fonts/Roboto-Bold.ttf"));
+            PDType0Font regular = PDType0Font.load(document, regularFont);
+            PDType0Font bold = PDType0Font.load(document, boldFont);
 
             try (PDPageContentStream content = new PDPageContentStream(document, document.getPage(0))) {
                 content.setStrokingColor(GOLD);
@@ -58,6 +63,11 @@ public class PdfService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to generate PDF", e);
         }
+    }
+
+    private InputStream loadFontResource(String resource) {
+        return Optional.ofNullable(getClass().getResourceAsStream(resource))
+                .orElseThrow(() -> new IllegalStateException("Certificate font not found: " + resource));
     }
 
     private void drawCentered(PDPageContentStream content, PDType0Font font, float fontSize, Color color, String text, float y) throws IOException {
