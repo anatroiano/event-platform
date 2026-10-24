@@ -2,12 +2,15 @@ package com.example.certificate_service.service;
 
 import com.example.certificate_service.domain.Certificate;
 import com.example.certificate_service.dto.CertificateRequest;
+import com.example.certificate_service.dto.CertificateResponse;
 import com.example.certificate_service.exception.CertificateNotFoundException;
 import com.example.certificate_service.messaging.event.CertificateEmailNotificationEvent;
 import com.example.certificate_service.repository.CertificateRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,7 +48,7 @@ class CertificateServiceTest {
     void setUp() {
         certificateService = new CertificateService(certificateRepository, pdfService, pdfStorageService,
                 outboxService, Clock.fixed(NOW, ZoneOffset.UTC));
-        ReflectionTestUtils.setField(certificateService, "baseUrl", "https://cert.example.com");
+        ReflectionTestUtils.setField(certificateService, "frontendUrl", "https://app.example.com");
     }
 
     private CertificateRequest buildRequest() {
@@ -74,8 +77,10 @@ class CertificateServiceTest {
         then(outboxService).shouldHaveNoInteractions();
     }
 
-    @Test
-    void generatesPdfAndQueuesNotificationWithDownloadUrl() {
+    @ParameterizedTest
+    @ValueSource(strings = {"https://app.example.com", "https://app.example.com/"})
+    void generatesPdfAndQueuesNotificationWithFrontendUrl(String frontendUrl) {
+        ReflectionTestUtils.setField(certificateService, "frontendUrl", frontendUrl);
         Certificate saved = prepareNewCertificate();
         byte[] pdf = {1, 2, 3};
         given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(pdf);
@@ -92,7 +97,7 @@ class CertificateServiceTest {
         assertThat(eventCaptor.getValue().recipientEmail()).isEqualTo("john.doe@email.com");
         assertThat(eventCaptor.getValue().occurredAt()).isEqualTo(NOW);
         assertThat(eventCaptor.getValue().templateData()).containsEntry("certificateUrl",
-                "https://cert.example.com/certificates/" + saved.getId() + "/download");
+                "https://app.example.com/certificates/" + saved.getId());
     }
 
     @Test
@@ -117,6 +122,30 @@ class CertificateServiceTest {
         assertThatThrownBy(() -> certificateService.generate(buildRequest())).isSameAs(failure);
 
         then(outboxService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void returnsCertificateDetailsWithoutLoadingPdf() {
+        Certificate certificate = Certificate.from(buildRequest(), NOW);
+        given(certificateRepository.findById(certificate.getId())).willReturn(Optional.of(certificate));
+
+        CertificateResponse details = certificateService.getDetails(certificate.getId());
+
+        assertThat(details.id()).isEqualTo(certificate.getId());
+        assertThat(details.eventName()).isEqualTo("Workshop");
+        assertThat(details.issuedAt()).isEqualTo(NOW);
+        assertThat(details.participantName()).isEqualTo("John Doe");
+        then(pdfService).shouldHaveNoInteractions();
+        then(pdfStorageService).shouldHaveNoInteractions();
+        then(outboxService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void rejectsDetailsRequestWhenCertificateDoesNotExist() {
+        given(certificateRepository.findById("missing")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> certificateService.getDetails("missing"))
+                .isInstanceOf(CertificateNotFoundException.class);
     }
 
     @Test

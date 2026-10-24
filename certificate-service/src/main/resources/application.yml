@@ -36,7 +36,7 @@ server:
   port: 8083
 
 app:
-  base-url: ${APP_BASE_URL:http://localhost:8083}
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
 
 certificate:
   storage-path: /app/storage

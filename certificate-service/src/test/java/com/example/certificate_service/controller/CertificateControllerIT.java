@@ -1,5 +1,6 @@
 package com.example.certificate_service.controller;
 
+import com.example.certificate_service.dto.CertificateResponse;
 import com.example.certificate_service.exception.CertificateFileNotFoundException;
 import com.example.certificate_service.exception.CertificateNotFoundException;
 import com.example.certificate_service.service.CertificateService;
@@ -11,6 +12,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Optional;
+import java.time.Instant;
 
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -24,6 +26,32 @@ class CertificateControllerIT {
 
     @MockitoBean
     private CertificateService certificateService;
+
+    @Test
+    void returnsCertificateDetailsForFrontend() throws Exception {
+        given(certificateService.getDetails("cert-001"))
+                .willReturn(new CertificateResponse("cert-001", "Workshop",
+                        Instant.parse("2026-01-01T12:00:00Z"), "John Doe"));
+
+        mockMvc.perform(get("/certificates/cert-001"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.id").value("cert-001"))
+                .andExpect(jsonPath("$.eventName").value("Workshop"))
+                .andExpect(jsonPath("$.issuedAt").value("2026-01-01T12:00:00Z"))
+                .andExpect(jsonPath("$.participantName").value("John Doe"))
+                .andExpect(jsonPath("$.participantEmail").doesNotExist())
+                .andExpect(jsonPath("$.fileKey").doesNotExist());
+    }
+
+    @Test
+    void returns404WhenCertificateDetailsDoNotExist() throws Exception {
+        given(certificateService.getDetails("missing")).willThrow(new CertificateNotFoundException("missing"));
+
+        mockMvc.perform(get("/certificates/missing"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404));
+    }
 
     @Test
     void returnsPdfWithDownloadHeaders() throws Exception {

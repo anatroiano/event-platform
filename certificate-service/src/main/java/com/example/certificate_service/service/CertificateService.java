@@ -2,6 +2,7 @@ package com.example.certificate_service.service;
 
 import com.example.certificate_service.domain.Certificate;
 import com.example.certificate_service.dto.CertificateRequest;
+import com.example.certificate_service.dto.CertificateResponse;
 import com.example.certificate_service.exception.CertificateNotFoundException;
 import com.example.certificate_service.messaging.event.CertificateEmailNotificationEvent;
 import com.example.certificate_service.repository.CertificateRepository;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Clock;
 import java.util.Map;
@@ -35,8 +37,8 @@ public class CertificateService {
 
     private final Clock clock;
 
-    @Value("${app.base-url}")
-    private String baseUrl;
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     public Certificate generate(CertificateRequest request) {
 
@@ -66,7 +68,9 @@ public class CertificateService {
 
         certificate.setFileKey(fileKey);
 
-        String certificateUrl = baseUrl + "/certificates/" + certificate.getId() + "/download";
+        String certificateUrl = UriComponentsBuilder.fromUriString(frontendUrl)
+                .pathSegment("certificates", certificate.getId())
+                .toUriString();
 
         CertificateEmailNotificationEvent notification = CertificateEmailNotificationEvent.of(
                 certificate.getParticipantEmail(),
@@ -82,6 +86,13 @@ public class CertificateService {
         log.info("Certificate generated and notification queued for subscriptionId: {}", request.subscriptionId());
 
         return certificate;
+    }
+
+    @Transactional(readOnly = true)
+    public CertificateResponse getDetails(String certificateId) {
+        return certificateRepository.findById(certificateId)
+                .map(CertificateResponse::from)
+                .orElseThrow(() -> new CertificateNotFoundException(certificateId));
     }
 
     @Transactional(readOnly = true)

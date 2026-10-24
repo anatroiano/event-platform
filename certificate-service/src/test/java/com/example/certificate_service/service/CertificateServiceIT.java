@@ -3,6 +3,8 @@ package com.example.certificate_service.service;
 import com.example.certificate_service.TestcontainersConfiguration;
 import com.example.certificate_service.domain.Certificate;
 import com.example.certificate_service.dto.CertificateRequest;
+import com.example.certificate_service.dto.CertificateResponse;
+import com.example.certificate_service.exception.CertificateNotFoundException;
 import com.example.certificate_service.repository.CertificateRepository;
 import com.example.certificate_service.repository.OutboxRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -88,7 +90,7 @@ class CertificateServiceIT {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(certificateService, "baseUrl", "https://cert.example.com");
+        ReflectionTestUtils.setField(certificateService, "frontendUrl", "https://app.example.com");
         given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(new byte[]{1, 2, 3});
     }
 
@@ -110,6 +112,24 @@ class CertificateServiceIT {
     }
 
     @Test
+    void returnsDetailsFromPersistedCertificate() {
+        Certificate certificate = certificateService.generate(request("evt-001", "sub-001"));
+
+        CertificateResponse details = certificateService.getDetails(certificate.getId());
+
+        assertThat(details.id()).isEqualTo(certificate.getId());
+        assertThat(details.eventName()).isEqualTo("Workshop");
+        assertThat(details.issuedAt()).isEqualTo(NOW);
+        assertThat(details.participantName()).isEqualTo("John Doe");
+    }
+
+    @Test
+    void rejectsUnknownCertificateDetails() {
+        assertThatThrownBy(() -> certificateService.getDetails("missing"))
+                .isInstanceOf(CertificateNotFoundException.class);
+    }
+
+    @Test
     void commitsCertificatePdfAndNotificationTogether() {
         Certificate result = certificateService.generate(request("evt-001", "sub-001"));
 
@@ -120,6 +140,9 @@ class CertificateServiceIT {
         assertThat(outboxRepository.findAll()).singleElement().satisfies(message -> {
             assertThat(message.getProcessedAt()).isNull();
             assertThat(message.getPayload()).contains("john.doe@email.com", result.getId());
+            assertThat(JsonMapper.builder().build().readTree(message.getPayload())
+                    .at("/templateData/certificateUrl").asText())
+                    .isEqualTo("https://app.example.com/certificates/" + result.getId());
         });
     }
 
@@ -159,7 +182,7 @@ class CertificateServiceIT {
 
     @Test
     void rollsBackCertificateAndRemovesPdfWhenOutboxWriteFails() throws IOException {
-        ReflectionTestUtils.setField(certificateService, "baseUrl", "https://cert.example.com/" + "a".repeat(4500));
+        ReflectionTestUtils.setField(certificateService, "frontendUrl", "https://app.example.com/" + "a".repeat(4500));
 
         assertThatThrownBy(() -> certificateService.generate(request("evt-001", "sub-001")))
                 .isInstanceOf(DataIntegrityViolationException.class);

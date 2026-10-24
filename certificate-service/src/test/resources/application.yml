@@ -8,4 +8,4 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
 app:
-  base-url: http://localhost:8083
+  frontend-url: https://app.example.com

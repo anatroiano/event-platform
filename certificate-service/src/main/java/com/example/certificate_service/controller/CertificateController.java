@@ -1,5 +1,6 @@
 package com.example.certificate_service.controller;
 
+import com.example.certificate_service.dto.CertificateResponse;
 import com.example.certificate_service.service.CertificateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Tag(name = "Certificates", description = "Operations related to certificate download")
+@Tag(name = "Certificates", description = "Operations related to certificate details and download")
 @RestController
 @RequestMapping("/certificates")
 @RequiredArgsConstructor
@@ -25,6 +26,16 @@ public class CertificateController {
     private static final Logger log = LoggerFactory.getLogger(CertificateController.class);
 
     private final CertificateService certificateService;
+
+    @Operation(summary = "Get certificate details", description = "Returns certificate information for the frontend")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Certificate details returned"),
+            @ApiResponse(responseCode = "404", description = "Certificate not found")
+    })
+    @GetMapping("/{certificateId}")
+    public ResponseEntity<CertificateResponse> getDetails(@PathVariable String certificateId) {
+        return ResponseEntity.ok(certificateService.getDetails(certificateId));
+    }
 
     @Operation(summary = "Download certificate PDF", description = "Downloads the PDF certificate for the given certificate ID")
     @ApiResponses(value = {
