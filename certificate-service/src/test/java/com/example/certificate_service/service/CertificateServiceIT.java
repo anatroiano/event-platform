@@ -7,12 +7,16 @@ import com.example.certificate_service.dto.CertificateResponse;
 import com.example.certificate_service.exception.CertificateNotFoundException;
 import com.example.certificate_service.repository.CertificateRepository;
 import com.example.certificate_service.repository.OutboxRepository;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -42,6 +46,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 @DataJpaTest
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
 @Import({CertificateService.class, OutboxService.class, CertificateServiceIT.TestConfig.class,
         TestcontainersConfiguration.class})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -77,6 +82,9 @@ class CertificateServiceIT {
     private PdfService pdfService;
 
     @Autowired
+    private Flyway flyway;
+
+    @Autowired
     private CertificateService certificateService;
     @Autowired
     private CertificateRepository certificateRepository;
@@ -109,6 +117,14 @@ class CertificateServiceIT {
 
     private CertificateRequest request(String eventId, String subscriptionId) {
         return new CertificateRequest(eventId, subscriptionId, "John Doe", "john.doe@email.com", "Workshop");
+    }
+
+    @Test
+    void appliesVersionedSchemaMigrations() {
+        assertThat(flyway.info().applied()).extracting(MigrationInfo::getScript)
+                .contains("V1__create_initial_schema.sql");
+        assertThat(flyway.info().pending()).isEmpty();
+        flyway.validate();
     }
 
     @Test

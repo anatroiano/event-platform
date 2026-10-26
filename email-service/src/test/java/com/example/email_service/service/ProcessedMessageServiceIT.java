@@ -2,12 +2,16 @@ package com.example.email_service.service;
 
 import com.example.email_service.domain.ProcessedMessage;
 import com.example.email_service.repository.ProcessedMessageRepository;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -34,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
+@ImportAutoConfiguration(FlywayAutoConfiguration.class)
 @Testcontainers
 @Import({ProcessedMessageService.class, ProcessedMessageServiceIT.TestConfig.class})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -55,6 +60,9 @@ class ProcessedMessageServiceIT {
     static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18");
 
     @Autowired
+    private Flyway flyway;
+
+    @Autowired
     private ProcessedMessageService processedMessageService;
 
     @Autowired
@@ -63,6 +71,14 @@ class ProcessedMessageServiceIT {
     @AfterEach
     void cleanUp() {
         processedMessageRepository.deleteAll();
+    }
+
+    @Test
+    void appliesVersionedSchemaMigrations() {
+        assertThat(flyway.info().applied()).extracting(MigrationInfo::getScript)
+                .contains("V1__create_initial_schema.sql");
+        assertThat(flyway.info().pending()).isEmpty();
+        flyway.validate();
     }
 
     @Nested

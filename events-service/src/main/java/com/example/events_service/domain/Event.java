@@ -34,6 +34,7 @@ public class Event {
     private String title;
 
     @Size(max = 2000, message = "A descrição do evento deve ter no máximo 2000 caracteres.")
+    @Column(length = 2000)
     private String description;
 
     private boolean certificateRequestsSent;
