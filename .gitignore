@@ -30,3 +30,6 @@ Thumbs.db
 **/application-local.properties
 **/application-local.yml
 **/application-local.yaml
+
+# Local agent instructions
+/AGENTS.md

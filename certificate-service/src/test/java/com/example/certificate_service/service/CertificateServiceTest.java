@@ -2,156 +2,179 @@ package com.example.certificate_service.service;
 
 import com.example.certificate_service.domain.Certificate;
 import com.example.certificate_service.dto.CertificateRequest;
-import com.example.certificate_service.messaging.publisher.CertificateNotificationPublisher;
+import com.example.certificate_service.dto.CertificateResponse;
+import com.example.certificate_service.exception.CertificateNotFoundException;
+import com.example.certificate_service.messaging.event.CertificateEmailNotificationEvent;
 import com.example.certificate_service.repository.CertificateRepository;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.Mockito.never;
+import static org.mockito.BDDMockito.willThrow;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("CertificateService")
 class CertificateServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
 
     @Mock
     private CertificateRepository certificateRepository;
-
     @Mock
     private PdfService pdfService;
-
     @Mock
     private PdfStorageService pdfStorageService;
-
     @Mock
-    private CertificateNotificationPublisher notificationPublisher;
+    private OutboxService outboxService;
 
-    @InjectMocks
     private CertificateService certificateService;
 
     @BeforeEach
-    void injectBaseUrl() {
-        ReflectionTestUtils.setField(certificateService, "baseUrl", "https://cert.example.com");
+    void setUp() {
+        certificateService = new CertificateService(certificateRepository, pdfService, pdfStorageService,
+                outboxService, Clock.fixed(NOW, ZoneOffset.UTC));
+        ReflectionTestUtils.setField(certificateService, "frontendUrl", "https://app.example.com");
     }
 
     private CertificateRequest buildRequest() {
-        return new CertificateRequest(
-                "evt-001",
-                "sub-001",
-                "John Doe",
-                "john.doe@email.com",
-                "Spring Boot Workshop"
-        );
+        return new CertificateRequest("evt-001", "sub-001", "John Doe", "john.doe@email.com", "Workshop");
     }
 
-    private Certificate buildSavedCertificate(CertificateRequest request) {
-        Certificate certificate = Certificate.from(request);
-        ReflectionTestUtils.setField(certificate, "id", "cert-uuid-001");
-        return certificate;
+    private Certificate prepareNewCertificate() {
+        Certificate saved = Certificate.from(buildRequest(), NOW);
+        given(certificateRepository.insertIfAbsent(any())).willReturn(1);
+        given(certificateRepository.findBySubscriptionIdAndEventId("sub-001", "evt-001"))
+                .willReturn(Optional.of(saved));
+        return saved;
     }
 
-    @Nested
-    @DisplayName("generate()")
-    class Generate {
+    @Test
+    void returnsExistingCertificateWithoutRegeneratingOrQueuingNotification() {
+        Certificate existing = Certificate.from(buildRequest(), NOW);
+        given(certificateRepository.insertIfAbsent(any())).willReturn(0);
+        given(certificateRepository.findBySubscriptionIdAndEventId("sub-001", "evt-001"))
+                .willReturn(Optional.of(existing));
 
-        @Test
-        @DisplayName("throws IllegalStateException when certificate already exists for the same subscription and event")
-        void throwsWhenCertificateAlreadyExists() {
-            CertificateRequest request = buildRequest();
-            given(certificateRepository.existsBySubscriptionIdAndEventId("sub-001", "evt-001")).willReturn(true);
+        assertThat(certificateService.generate(buildRequest())).isSameAs(existing);
 
-            assertThatThrownBy(() -> certificateService.generate(request))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Certificate already exists");
+        then(pdfService).shouldHaveNoInteractions();
+        then(pdfStorageService).shouldHaveNoInteractions();
+        then(outboxService).shouldHaveNoInteractions();
+    }
 
-            then(pdfService).should(never()).generate(any(), any(), any(), any(), any());
-            then(pdfStorageService).should(never()).store(any(), any());
-            then(notificationPublisher).should(never()).publish(any());
-        }
+    @ParameterizedTest
+    @ValueSource(strings = {"https://app.example.com", "https://app.example.com/"})
+    void generatesPdfAndQueuesNotificationWithFrontendUrl(String frontendUrl) {
+        ReflectionTestUtils.setField(certificateService, "frontendUrl", frontendUrl);
+        Certificate saved = prepareNewCertificate();
+        byte[] pdf = {1, 2, 3};
+        given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(pdf);
 
-        @Test
-        @DisplayName("persists certificate, generates PDF, stores it and publishes notification on happy path")
-        void generatesCertificateOnHappyPath() {
-            CertificateRequest request = buildRequest();
-            Certificate saved = buildSavedCertificate(request);
+        Certificate result = certificateService.generate(buildRequest());
 
-            given(certificateRepository.existsBySubscriptionIdAndEventId("sub-001", "evt-001")).willReturn(false);
-            given(certificateRepository.save(any(Certificate.class))).willReturn(saved);
-            given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(new byte[]{1, 2, 3});
+        assertThat(result).isSameAs(saved);
+        assertThat(result.getFileKey()).isEqualTo("certificates/" + saved.getId() + ".pdf");
+        then(pdfService).should().generate("Certificado de Participação", "John Doe", "Workshop", NOW, saved.getId());
+        then(pdfStorageService).should().store(result.getFileKey(), pdf);
+        ArgumentCaptor<CertificateEmailNotificationEvent> eventCaptor =
+                ArgumentCaptor.forClass(CertificateEmailNotificationEvent.class);
+        then(outboxService).should().save(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().recipientEmail()).isEqualTo("john.doe@email.com");
+        assertThat(eventCaptor.getValue().occurredAt()).isEqualTo(NOW);
+        assertThat(eventCaptor.getValue().templateData()).containsEntry("certificateUrl",
+                "https://app.example.com/certificates/" + saved.getId());
+    }
 
-            Certificate result = certificateService.generate(request);
+    @Test
+    void propagatesPdfGenerationFailureWithoutStoringOrNotifying() {
+        prepareNewCertificate();
+        RuntimeException failure = new RuntimeException("PDF failed");
+        given(pdfService.generate(any(), any(), any(), any(), any())).willThrow(failure);
 
-            assertThat(result.getId()).isEqualTo("cert-uuid-001");
-            then(pdfService).should().generate(any(), any(), any(), any(), any());
-            then(pdfStorageService).should().store("certificates/cert-uuid-001.pdf", new byte[]{1, 2, 3});
-            then(notificationPublisher).should().publish(any());
-        }
+        assertThatThrownBy(() -> certificateService.generate(buildRequest())).isSameAs(failure);
 
-        @Test
-        @DisplayName("saves the certificate twice: once before PDF generation and once after setting the fileKey")
-        void savesCertificateTwice() {
-            CertificateRequest request = buildRequest();
-            Certificate saved = buildSavedCertificate(request);
+        then(pdfStorageService).shouldHaveNoInteractions();
+        then(outboxService).shouldHaveNoInteractions();
+    }
 
-            given(certificateRepository.existsBySubscriptionIdAndEventId("sub-001", "evt-001")).willReturn(false);
-            given(certificateRepository.save(any(Certificate.class))).willReturn(saved);
-            given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(new byte[0]);
+    @Test
+    void doesNotQueueNotificationWhenStorageFails() {
+        prepareNewCertificate();
+        given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(new byte[]{1});
+        RuntimeException failure = new RuntimeException("Storage failed");
+        willThrow(failure).given(pdfStorageService).store(any(), any());
 
-            certificateService.generate(request);
+        assertThatThrownBy(() -> certificateService.generate(buildRequest())).isSameAs(failure);
 
-            then(certificateRepository).should(org.mockito.Mockito.times(2)).save(any(Certificate.class));
-        }
+        then(outboxService).shouldHaveNoInteractions();
+    }
 
-        @Test
-        @DisplayName("notification contains the correct recipient email and certificate download URL")
-        void notificationContainsCorrectEmailAndUrl() {
-            CertificateRequest request = buildRequest();
-            Certificate saved = buildSavedCertificate(request);
+    @Test
+    void returnsCertificateDetailsWithoutLoadingPdf() {
+        Certificate certificate = Certificate.from(buildRequest(), NOW);
+        given(certificateRepository.findById(certificate.getId())).willReturn(Optional.of(certificate));
 
-            given(certificateRepository.existsBySubscriptionIdAndEventId("sub-001", "evt-001")).willReturn(false);
-            given(certificateRepository.save(any(Certificate.class))).willReturn(saved);
-            given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(new byte[0]);
+        CertificateResponse details = certificateService.getDetails(certificate.getId());
 
-            certificateService.generate(request);
+        assertThat(details.id()).isEqualTo(certificate.getId());
+        assertThat(details.eventName()).isEqualTo("Workshop");
+        assertThat(details.issuedAt()).isEqualTo(NOW);
+        assertThat(details.participantName()).isEqualTo("John Doe");
+        then(pdfService).shouldHaveNoInteractions();
+        then(pdfStorageService).shouldHaveNoInteractions();
+        then(outboxService).shouldHaveNoInteractions();
+    }
 
-            ArgumentCaptor<com.example.certificate_service.messaging.event.CertificateEmailNotificationEvent> captor =
-                    ArgumentCaptor.forClass(com.example.certificate_service.messaging.event.CertificateEmailNotificationEvent.class);
-            then(notificationPublisher).should().publish(captor.capture());
+    @Test
+    void rejectsDetailsRequestWhenCertificateDoesNotExist() {
+        given(certificateRepository.findById("missing")).willReturn(Optional.empty());
 
-            var notification = captor.getValue();
-            assertThat(notification.recipientEmail()).isEqualTo("john.doe@email.com");
-            assertThat(notification.templateData()).containsKey("certificateUrl");
-            assertThat(notification.templateData().get("certificateUrl").toString())
-                    .isEqualTo("https://cert.example.com/certificates/cert-uuid-001/download");
-        }
+        assertThatThrownBy(() -> certificateService.getDetails("missing"))
+                .isInstanceOf(CertificateNotFoundException.class);
+    }
 
-        @Test
-        @DisplayName("stores PDF under the key 'certificates/{id}.pdf'")
-        void storesPdfUnderCorrectKey() {
-            CertificateRequest request = buildRequest();
-            Certificate saved = buildSavedCertificate(request);
+    @Test
+    void rejectsDownloadWhenCertificateDoesNotExist() {
+        given(certificateRepository.findById("missing")).willReturn(Optional.empty());
 
-            given(certificateRepository.existsBySubscriptionIdAndEventId("sub-001", "evt-001")).willReturn(false);
-            given(certificateRepository.save(any(Certificate.class))).willReturn(saved);
-            given(pdfService.generate(any(), any(), any(), any(), any())).willReturn(new byte[]{42});
+        assertThatThrownBy(() -> certificateService.download("missing"))
+                .isInstanceOf(CertificateNotFoundException.class);
 
-            certificateService.generate(request);
+        then(pdfStorageService).shouldHaveNoInteractions();
+    }
 
-            ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
-            then(pdfStorageService).should().store(keyCaptor.capture(), any());
-            assertThat(keyCaptor.getValue()).isEqualTo("certificates/cert-uuid-001.pdf");
-        }
+    @Test
+    void returnsEmptyWhenCertificateHasNoFileYet() {
+        Certificate certificate = Certificate.from(buildRequest(), NOW);
+        given(certificateRepository.findById(certificate.getId())).willReturn(Optional.of(certificate));
+
+        assertThat(certificateService.download(certificate.getId())).isEmpty();
+        then(pdfStorageService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void loadsPdfForExistingCertificate() {
+        Certificate certificate = Certificate.from(buildRequest(), NOW);
+        certificate.setFileKey("certificates/test.pdf");
+        byte[] pdf = {1, 2, 3};
+        given(certificateRepository.findById(certificate.getId())).willReturn(Optional.of(certificate));
+        given(pdfStorageService.load(certificate.getFileKey())).willReturn(pdf);
+
+        assertThat(certificateService.download(certificate.getId())).contains(pdf);
     }
 }

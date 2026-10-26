@@ -1,6 +1,9 @@
 package com.example.email_service.domain;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -26,9 +29,12 @@ public class ProcessedMessage {
     private Long id;
 
     @Column(name = "message_id", nullable = false, updatable = false, length = 64)
+    @NotBlank(message = "O identificador da mensagem é obrigatório.")
+    @Size(max = 64, message = "O identificador da mensagem deve ter no máximo 64 caracteres.")
     private String messageId;
 
     @Column(name = "processed_at", nullable = false, updatable = false)
+    @NotNull(message = "O horário de processamento é obrigatório.")
     private Instant processedAt;
 
     private ProcessedMessage(String messageId, Instant processedAt) {

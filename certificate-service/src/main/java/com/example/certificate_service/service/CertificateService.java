@@ -2,8 +2,9 @@ package com.example.certificate_service.service;
 
 import com.example.certificate_service.domain.Certificate;
 import com.example.certificate_service.dto.CertificateRequest;
+import com.example.certificate_service.dto.CertificateResponse;
+import com.example.certificate_service.exception.CertificateNotFoundException;
 import com.example.certificate_service.messaging.event.CertificateEmailNotificationEvent;
-import com.example.certificate_service.messaging.publisher.CertificateNotificationPublisher;
 import com.example.certificate_service.repository.CertificateRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -11,8 +12,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.Clock;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @Transactional
@@ -27,21 +33,27 @@ public class CertificateService {
 
     private final PdfStorageService pdfStorageService;
 
-    private final CertificateNotificationPublisher notificationPublisher;
+    private final OutboxService outboxService;
 
-    @Value("${app.base-url}")
-    private String baseUrl;
+    private final Clock clock;
+
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     public Certificate generate(CertificateRequest request) {
 
         log.info("Generating certificate for subscriptionId: {}", request.subscriptionId());
 
-        if (certificateRepository.existsBySubscriptionIdAndEventId(request.subscriptionId(), request.eventId())) {
-            log.info("Certificate already exists for subscriptionId: {}", request.subscriptionId());
-            throw new IllegalStateException("Certificate already exists for this subscription and event");
-        }
+        Certificate candidate = Certificate.from(request, clock.instant());
+        boolean created = certificateRepository.insertIfAbsent(candidate) == 1;
+        Certificate certificate = certificateRepository
+                .findBySubscriptionIdAndEventId(request.subscriptionId(), request.eventId())
+                .orElseThrow(() -> new CertificateNotFoundException(candidate.getId()));
 
-        Certificate certificate = certificateRepository.save(Certificate.from(request));
+        if (!created) {
+            log.info("Certificate already generated for subscriptionId: {}", request.subscriptionId());
+            return certificate;
+        }
 
         byte[] pdf = pdfService.generate("Certificado de Participação",
                 certificate.getParticipantName(),
@@ -51,12 +63,14 @@ public class CertificateService {
         );
 
         String fileKey = "certificates/" + certificate.getId() + ".pdf";
+        deleteFileOnRollback(fileKey);
         pdfStorageService.store(fileKey, pdf);
 
         certificate.setFileKey(fileKey);
-        certificateRepository.save(certificate);
 
-        String certificateUrl = baseUrl + "/certificates/" + certificate.getId() + "/download";
+        String certificateUrl = UriComponentsBuilder.fromUriString(frontendUrl)
+                .pathSegment("certificates", certificate.getId())
+                .toUriString();
 
         CertificateEmailNotificationEvent notification = CertificateEmailNotificationEvent.of(
                 certificate.getParticipantEmail(),
@@ -64,12 +78,47 @@ public class CertificateService {
                         "participantName", certificate.getParticipantName(),
                         "eventName", certificate.getEventName(),
                         "certificateUrl", certificateUrl
-                )
+                ),
+                certificate.getIssuedAt()
         );
 
-        notificationPublisher.publish(notification);
-        log.info("Certificate generated and notification published for subscriptionId: {}", request.subscriptionId());
+        outboxService.save(notification);
+        log.info("Certificate generated and notification queued for subscriptionId: {}", request.subscriptionId());
 
         return certificate;
+    }
+
+    @Transactional(readOnly = true)
+    public CertificateResponse getDetails(String certificateId) {
+        return certificateRepository.findById(certificateId)
+                .map(CertificateResponse::from)
+                .orElseThrow(() -> new CertificateNotFoundException(certificateId));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<byte[]> download(String certificateId) {
+        Certificate certificate = certificateRepository.findById(certificateId)
+                .orElseThrow(() -> new CertificateNotFoundException(certificateId));
+
+        return Optional.ofNullable(certificate.getFileKey()).map(pdfStorageService::load);
+    }
+
+    private void deleteFileOnRollback(String fileKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    try {
+                        pdfStorageService.delete(fileKey);
+                    } catch (RuntimeException ex) {
+                        log.error("Failed to remove certificate PDF after rollback: fileKey={}", fileKey, ex);
+                    }
+                }
+            }
+        });
     }
 }

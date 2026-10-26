@@ -12,14 +12,14 @@ public record CertificateEmailNotificationEvent(
         Map<String, Object> templateData,
         Instant occurredAt
 ) {
-    public static CertificateEmailNotificationEvent of(String recipientEmail, Map<String, Object> templateData) {
+    public static CertificateEmailNotificationEvent of(String recipientEmail, Map<String, Object> templateData, Instant occurredAt) {
         return new CertificateEmailNotificationEvent(
                 UUID.randomUUID().toString(),
                 null,
                 "certificate",
                 recipientEmail,
                 templateData,
-                Instant.now()
+                occurredAt
         );
     }
 }

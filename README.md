@@ -25,6 +25,7 @@ comunicação assíncrona entre os serviços utilizando RabbitMQ.
 - Spring Data JPA
 - Spring Web MVC
 - PostgreSQL (um banco de dados por serviço)
+- Flyway para versionamento dos schemas
 - RabbitMQ
 - Maven
 - Swagger/OpenAPI

@@ -3,12 +3,15 @@ package com.example.events_service.controller;
 import com.example.events_service.domain.Event;
 import com.example.events_service.dto.EventRequestDTO;
 import com.example.events_service.exception.AlreadySubscribedException;
+import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.EventFullException;
 import com.example.events_service.exception.EventNotFoundException;
 import com.example.events_service.service.EventService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.data.domain.PageImpl;
@@ -24,6 +27,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -54,6 +58,55 @@ class EventControllerIT {
     @Nested
     @DisplayName("POST /events")
     class CreateEvent {
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "",
+                "{",
+                "{\"maxParticipants\":\"invalid\"}",
+                "{\"maxParticipants\":null}"
+        })
+        void returnsStructuredErrorWhenRequestCannotBeRead(String body) throws Exception {
+            mockMvc.perform(post("/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.message")
+                            .value("O corpo da requisição está ausente ou contém dados inválidos."));
+
+            verifyNoInteractions(eventService);
+        }
+
+        @Test
+        @DisplayName("returns 400 with an explicit message when event data is missing")
+        void returns400WhenEventDataIsMissing() throws Exception {
+            mockMvc.perform(post("/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"maxParticipants\": 10, \"title\": \"Workshop\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.message").value("A data do evento é obrigatória."));
+
+            verifyNoInteractions(eventService);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "{\"maxParticipants\":0,\"date\":\"2030-06-01T10:00:00Z\",\"title\":\"Workshop\"}",
+                "{\"maxParticipants\":10,\"date\":\"2030-06-01T10:00:00Z\",\"title\":\" \"}",
+                "{}"
+        })
+        void rejectsInvalidEventBeforeCallingService(String body) throws Exception {
+            mockMvc.perform(post("/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.message").isNotEmpty());
+
+            verifyNoInteractions(eventService);
+        }
 
         @Test
         @DisplayName("returns 201 and the created event body")
@@ -114,6 +167,31 @@ class EventControllerIT {
     @DisplayName("POST /events/{id}/register")
     class RegisterParticipant {
 
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "{}",
+                "{\"participantEmail\":null}",
+                "{\"participantEmail\":\" \"}",
+                "{\"participantEmail\":\"invalid-email\"}"
+        })
+        void rejectsInvalidSubscriptionBeforeCallingService(String body) throws Exception {
+            mockMvc.perform(post("/events/evt-001/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400));
+
+            verifyNoInteractions(eventService);
+        }
+
+        @Test
+        void allowsSubscriptionWithoutOptionalParticipantName() throws Exception {
+            mockMvc.perform(post("/events/evt-001/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"participantEmail\":\"user@example.com\"}"))
+                    .andExpect(status().isOk());
+        }
+
         private static final String REGISTER_BODY = """
                 {"participantName": "User Example", "participantEmail": "user@example.com"}
                 """;
@@ -151,6 +229,20 @@ class EventControllerIT {
                             .content(REGISTER_BODY))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.status").value(409));
+        }
+
+        @Test
+        @DisplayName("returns 409 when event has finished")
+        void returns409WhenEventFinished() throws Exception {
+            willThrow(new EventFinishedException())
+                    .given(eventService).registerParticipant(anyString(), anyString(), anyString());
+
+            mockMvc.perform(post("/events/evt-001/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(REGISTER_BODY))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.status").value(409))
+                    .andExpect(jsonPath("$.message").value("Evento já finalizado!"));
         }
 
         @Test

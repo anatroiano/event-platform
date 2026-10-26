@@ -1,5 +1,6 @@
 package com.example.certificate_service.service;
 
+import com.example.certificate_service.exception.CertificateFileNotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -68,11 +69,11 @@ class PdfStorageServiceTest {
         }
 
         @Test
-        @DisplayName("throws IllegalArgumentException when file does not exist")
+        @DisplayName("throws CertificateFileNotFoundException when file does not exist")
         void throwsWhenFileNotFound() {
             assertThatThrownBy(() -> service().load("certificates/missing.pdf"))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("Certificate file not found");
+                    .isInstanceOf(CertificateFileNotFoundException.class)
+                    .hasMessage("Arquivo do certificado não encontrado.");
         }
 
         @Test
@@ -80,7 +81,18 @@ class PdfStorageServiceTest {
         void throwsOnPathTraversal() {
             assertThatThrownBy(() -> service().load("../secret.pdf"))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessage("Certificate file not found");
+                    .hasMessage("Invalid file name");
         }
+    }
+
+    @Test
+    void deletesStoredFileAndAllowsRepeatedDeletion() {
+        PdfStorageService storage = service();
+        storage.store("certificates/delete.pdf", new byte[]{1});
+
+        storage.delete("certificates/delete.pdf");
+        storage.delete("certificates/delete.pdf");
+
+        assertThat(tempDir.resolve("certificates/delete.pdf")).doesNotExist();
     }
 }

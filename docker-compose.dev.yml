@@ -88,6 +88,7 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://events-db:5432/events_service
       - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_FLYWAY_BASELINE_ON_MIGRATE=${FLYWAY_BASELINE_ON_MIGRATE:-false}
     env_file:
       - ./events-service/.env
     volumes:
@@ -113,6 +114,7 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://email-db:5432/email_service
       - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_FLYWAY_BASELINE_ON_MIGRATE=${FLYWAY_BASELINE_ON_MIGRATE:-false}
     env_file:
       - ./email-service/.env
     volumes:
@@ -138,6 +140,7 @@ services:
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://certificate-db:5432/certificate_service
       - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_FLYWAY_BASELINE_ON_MIGRATE=${FLYWAY_BASELINE_ON_MIGRATE:-false}
     env_file:
       - ./certificate-service/.env
     volumes:

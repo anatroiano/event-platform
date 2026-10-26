@@ -5,8 +5,10 @@ import com.example.events_service.domain.Subscription;
 import com.example.events_service.dto.CheckinInfoDTO;
 import com.example.events_service.dto.EventRequestDTO;
 import com.example.events_service.exception.AlreadySubscribedException;
+import com.example.events_service.exception.EventFinishedException;
 import com.example.events_service.exception.EventFullException;
 import com.example.events_service.exception.EventNotFoundException;
+import com.example.events_service.exception.InvalidDataException;
 import com.example.events_service.exception.SubscriptionNotFoundException;
 import com.example.events_service.repository.EventRepository;
 import com.example.events_service.repository.SubscriptionRepository;
@@ -16,7 +18,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -25,7 +26,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -41,6 +44,8 @@ import static org.mockito.Mockito.never;
 @DisplayName("EventService")
 class EventServiceTest {
 
+    private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
+
     @Mock
     private EventRepository eventRepository;
 
@@ -50,11 +55,12 @@ class EventServiceTest {
     @Mock
     private OutboxService outboxService;
 
-    @InjectMocks
     private EventService eventService;
 
     @BeforeEach
-    void injectFrontendUrl() {
+    void setUp() {
+        eventService = new EventService(eventRepository, subscriptionRepository, outboxService,
+                Clock.fixed(NOW, ZoneOffset.UTC));
         ReflectionTestUtils.setField(eventService, "frontendUrl", "https://app.example.com");
     }
 
@@ -79,6 +85,15 @@ class EventServiceTest {
     @Nested
     @DisplayName("create()")
     class Create {
+
+        @Test
+        void rejectsMissingRequestBeforeCallingRepository() {
+            assertThatThrownBy(() -> eventService.create(null))
+                    .isInstanceOf(InvalidDataException.class)
+                    .hasMessage("Os dados do evento são obrigatórios.");
+
+            then(eventRepository).shouldHaveNoInteractions();
+        }
 
         @Test
         @DisplayName("saves and returns the persisted event")
@@ -134,6 +149,20 @@ class EventServiceTest {
         }
 
         @Test
+        @DisplayName("rejects registration for a finished event without creating a subscription or notification")
+        void throwsWhenEventIsFinished() {
+            Event event = buildEvent(EVENT_ID, 100);
+            event.setDate(NOW.minusSeconds(60));
+            given(eventRepository.findByIdForUpdate(EVENT_ID)).willReturn(Optional.of(event));
+
+            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL, "Test User"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            then(subscriptionRepository).shouldHaveNoInteractions();
+            then(outboxService).shouldHaveNoInteractions();
+        }
+
+        @Test
         @DisplayName("throws EventFullException when event has reached its maximum capacity")
         void throwsWhenEventIsFull() {
             int maxParticipants = 50;
@@ -148,6 +177,33 @@ class EventServiceTest {
 
             then(subscriptionRepository).should(never()).save(any());
             then(outboxService).should(never()).save(any(), any());
+        }
+
+        @Test
+        @DisplayName("rejects registration exactly at the event deadline")
+        void rejectsRegistrationAtDeadline() {
+            Event event = buildEvent(EVENT_ID, 100);
+            event.setDate(NOW);
+            given(eventRepository.findByIdForUpdate(EVENT_ID)).willReturn(Optional.of(event));
+
+            assertThatThrownBy(() -> eventService.registerParticipant(EVENT_ID, EMAIL, "Test User"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            then(subscriptionRepository).shouldHaveNoInteractions();
+            then(outboxService).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("allows registration immediately before the event deadline")
+        void allowsRegistrationBeforeDeadline() {
+            Event event = buildEvent(EVENT_ID, 100);
+            event.setDate(NOW.plusNanos(1));
+            given(eventRepository.findByIdForUpdate(EVENT_ID)).willReturn(Optional.of(event));
+
+            eventService.registerParticipant(EVENT_ID, EMAIL, "Test User");
+
+            then(subscriptionRepository).should().save(any(Subscription.class));
+            then(outboxService).should().save(eq("email.subscription.created"), any());
         }
 
         @Test
@@ -194,6 +250,17 @@ class EventServiceTest {
     class GetCheckinInfo {
 
         @Test
+        @DisplayName("returns an explicit error when a subscription has no event")
+        void rejectsSubscriptionWithoutEvent() {
+            Subscription subscription = buildSubscription(buildEvent("evt-xyz", 100), "user@example.com");
+            ReflectionTestUtils.setField(subscription, "event", null);
+            given(subscriptionRepository.findByCheckinToken("valid-token")).willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.getCheckinInfo("valid-token"))
+                    .isInstanceOf(EventNotFoundException.class);
+        }
+
+        @Test
         @DisplayName("throws SubscriptionNotFoundException when token does not exist")
         void throwsWhenTokenNotFound() {
             given(subscriptionRepository.findByCheckinToken("unknown-token")).willReturn(Optional.empty());
@@ -221,7 +288,7 @@ class EventServiceTest {
         void returnsAlreadyCheckedInTrue() {
             Event event = buildEvent("evt-xyz", 100);
             Subscription subscription = buildSubscription(event, "user@example.com");
-            subscription.checkIn();
+            subscription.checkIn(Instant.parse("2025-01-01T12:00:00Z"));
 
             given(subscriptionRepository.findByCheckinToken("valid-token")).willReturn(Optional.of(subscription));
 
@@ -236,9 +303,23 @@ class EventServiceTest {
     class CheckIn {
 
         @Test
+        @DisplayName("rejects check-in for a subscription without an event without changing attendance")
+        void rejectsSubscriptionWithoutEvent() {
+            Subscription subscription = buildSubscription(buildEvent("evt-xyz", 100), "user@example.com");
+            ReflectionTestUtils.setField(subscription, "event", null);
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token"))
+                    .willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.checkIn("my-token"))
+                    .isInstanceOf(EventNotFoundException.class);
+
+            assertThat(subscription.getCheckedInAt()).isNull();
+        }
+
+        @Test
         @DisplayName("throws SubscriptionNotFoundException when token does not exist")
         void throwsWhenTokenNotFound() {
-            given(subscriptionRepository.findByCheckinToken("bad-token")).willReturn(Optional.empty());
+            given(subscriptionRepository.findByCheckinTokenForUpdate("bad-token")).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> eventService.checkIn("bad-token"))
                     .isInstanceOf(SubscriptionNotFoundException.class);
@@ -251,11 +332,72 @@ class EventServiceTest {
             Subscription subscription = buildSubscription(event, "user@example.com");
             assertThat(subscription.isCheckedIn()).isFalse();
 
-            given(subscriptionRepository.findByCheckinToken("my-token")).willReturn(Optional.of(subscription));
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token")).willReturn(Optional.of(subscription));
 
             eventService.checkIn("my-token");
 
             assertThat(subscription.isCheckedIn()).isTrue();
+            assertThat(subscription.getCheckedInAt()).isEqualTo(NOW);
+        }
+
+        @Test
+        @DisplayName("rejects check-in exactly at the event deadline")
+        void rejectsCheckinAtDeadline() {
+            Event event = buildEvent("evt-xyz", 100);
+            event.setDate(NOW);
+            Subscription subscription = buildSubscription(event, "user@example.com");
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token"))
+                    .willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.checkIn("my-token"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            assertThat(subscription.getCheckedInAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("allows check-in immediately before the event deadline")
+        void allowsCheckinBeforeDeadline() {
+            Event event = buildEvent("evt-xyz", 100);
+            event.setDate(NOW.plusNanos(1));
+            Subscription subscription = buildSubscription(event, "user@example.com");
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token"))
+                    .willReturn(Optional.of(subscription));
+
+            eventService.checkIn("my-token");
+
+            assertThat(subscription.getCheckedInAt()).isEqualTo(NOW);
+        }
+
+        @Test
+        @DisplayName("rejects check-in for a finished event without changing attendance")
+        void throwsWhenEventIsFinished() {
+            Event event = buildEvent("evt-xyz", 100);
+            event.setDate(NOW.minusSeconds(60));
+            Subscription subscription = buildSubscription(event, "user@example.com");
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token")).willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.checkIn("my-token"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            assertThat(subscription.isCheckedIn()).isFalse();
+            assertThat(subscription.getCheckedInAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("rejects repeated check-in after the event has finished and preserves original attendance")
+        void throwsWhenAlreadyCheckedInAndEventIsFinished() {
+            Event event = buildEvent("evt-xyz", 100);
+            Subscription subscription = buildSubscription(event, "user@example.com");
+            subscription.checkIn(Instant.parse("2025-01-01T12:00:00Z"));
+            Instant firstCheckinTime = subscription.getCheckedInAt();
+            event.setDate(NOW.minusSeconds(60));
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token")).willReturn(Optional.of(subscription));
+
+            assertThatThrownBy(() -> eventService.checkIn("my-token"))
+                    .isInstanceOf(EventFinishedException.class);
+
+            assertThat(subscription.getCheckedInAt()).isEqualTo(firstCheckinTime);
         }
 
         @Test
@@ -263,10 +405,10 @@ class EventServiceTest {
         void isIdempotentWhenAlreadyCheckedIn() {
             Event event = buildEvent("evt-xyz", 100);
             Subscription subscription = buildSubscription(event, "user@example.com");
-            subscription.checkIn();
+            subscription.checkIn(Instant.parse("2025-01-01T12:00:00Z"));
             Instant firstCheckinTime = subscription.getCheckedInAt();
 
-            given(subscriptionRepository.findByCheckinToken("my-token")).willReturn(Optional.of(subscription));
+            given(subscriptionRepository.findByCheckinTokenForUpdate("my-token")).willReturn(Optional.of(subscription));
 
             eventService.checkIn("my-token");
 
@@ -300,7 +442,7 @@ class EventServiceTest {
         void delegatesToRepositoryAndReturnsPage() {
             Pageable pageable = PageRequest.of(0, 10);
             Page<Event> page = new PageImpl<>(List.of(buildEvent("e1", 50)));
-            given(eventRepository.findUpcoming(any(Instant.class), eq(pageable))).willReturn(page);
+            given(eventRepository.findUpcoming(NOW, pageable)).willReturn(page);
 
             Page<Event> result = eventService.findUpcoming(pageable);
 

@@ -3,11 +3,14 @@ package com.example.email_service.config;
 import com.example.email_service.template.UnknownTemplateException;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.annotation.RabbitListenerConfigurer;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.amqp.autoconfigure.RabbitListenerRetrySettingsCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException;
+import org.springframework.validation.Validator;
 
 import java.util.List;
 
@@ -60,9 +63,15 @@ public class RabbitConfig {
     }
 
     @Bean
+    public RabbitListenerConfigurer rabbitListenerConfigurer(Validator validator) {
+        return registrar -> registrar.setValidator(validator);
+    }
+
+    @Bean
     public RabbitListenerRetrySettingsCustomizer emailRetrySettingsCustomizer() {
         return settings -> settings.setExceptionExcludes(List.of(
                 UnknownTemplateException.class,
+                MethodArgumentNotValidException.class,
                 IllegalArgumentException.class,
                 AmqpRejectAndDontRequeueException.class
         ));

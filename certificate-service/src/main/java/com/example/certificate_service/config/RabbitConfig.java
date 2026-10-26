@@ -1,10 +1,17 @@
 package com.example.certificate_service.config;
 
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+import org.springframework.amqp.rabbit.annotation.RabbitListenerConfigurer;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.amqp.autoconfigure.RabbitListenerRetrySettingsCustomizer;
+import org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException;
+import org.springframework.validation.Validator;
+
+import java.util.List;
 
 @Configuration
 public class RabbitConfig {
@@ -52,5 +59,19 @@ public class RabbitConfig {
     @Bean
     public MessageConverter jsonMessageConverter() {
         return new JacksonJsonMessageConverter();
+    }
+
+    @Bean
+    public RabbitListenerConfigurer rabbitListenerConfigurer(Validator validator) {
+        return registrar -> registrar.setValidator(validator);
+    }
+
+    @Bean
+    public RabbitListenerRetrySettingsCustomizer certificateRetrySettingsCustomizer() {
+        return settings -> settings.setExceptionExcludes(List.of(
+                MethodArgumentNotValidException.class,
+                IllegalArgumentException.class,
+                AmqpRejectAndDontRequeueException.class
+        ));
     }
 }

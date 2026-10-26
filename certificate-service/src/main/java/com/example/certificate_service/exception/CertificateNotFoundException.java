@@ -1,8 +1,8 @@
-package com.example.certificate_service.controller;
+package com.example.certificate_service.exception;
 
 public class CertificateNotFoundException extends RuntimeException {
 
     public CertificateNotFoundException(String certificateId) {
-        super("Certificate not found: " + certificateId);
+        super("Certificado não encontrado: " + certificateId);
     }
 }
