@@ -59,7 +59,6 @@ serviços acontece de maneira assíncrona utilizando o RabbitMQ para envio e rec
 graph TB
     Client["Cliente / Frontend"]
     EventsService["events-service"]
-
     Client -->|" HTTP / REST "| EventsService
 
     subgraph Rabbit["RabbitMQ"]
@@ -73,7 +72,6 @@ graph TB
 
     EmailService["email-service"]
     CertService["certificate-service"]
-
     EventsService -->|" Publica "| Exchange
     Exchange -->|" Routing: email.# "| EmailQueue
     Exchange -->|" Routing: certificate.# "| CertQueue
@@ -84,7 +82,6 @@ graph TB
     CertQueue -.->|" Falha apos retry "| DLX
     DLX -->|" Mensagem rejeitada "| EmailDLQ
     DLX -->|" Mensagem rejeitada "| CertDLQ
-
     classDef client fill: #f5f5f5, stroke: #888, color: #1a1a1a
     classDef service fill: #e8f0fe, stroke: #4a6fa5, color: #1a1a1a
     classDef broker fill: #fff4e0, stroke: #c98a1b, color: #1a1a1a
@@ -159,6 +156,13 @@ Com os serviços em execução, acesse a documentação interativa nos seguintes
 
 - **Events Service**: [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html)
 - **Certificate Service**: [http://localhost:8083/swagger-ui/index.html](http://localhost:8083/swagger-ui/index.html)
+
+---
+
+## 🖥️ Frontend
+
+A interface web da plataforma é desenvolvida em React está disponível no
+repositório: [Event Platform — Frontend](https://github.com/anatroiano/events-frontend)
 
 ---
 
